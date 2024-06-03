@@ -1,11 +1,19 @@
 import torch
 import optuna
+import subprocess
 from data_loader import load_data
 from train_denoising_gan_hyperparameters import train_denoising_gan
 
 # Define paths to ground truth and degraded images
 gt_folder = 'DIV2K_train_HR.nosync/resized_ground_truth_images'
 degraded_folder = 'DIV2K_train_HR.nosync/degraded_images'
+
+def start_tensorboard(log_dir):
+    try:
+        subprocess.Popen(['tensorboard', '--logdir', log_dir])
+        print(f"TensorBoard started at http://localhost:6006")
+    except Exception as e:
+        print(f"Failed to start TensorBoard: {e}")
 
 def objective(trial):
     # Hyperparameter search space
@@ -34,6 +42,9 @@ def objective(trial):
     return best_val_loss
 
 if __name__ == "__main__":
+    log_dir = 'runs/denoising_gan'
+    start_tensorboard(log_dir)
+
     study = optuna.create_study(direction='minimize')
     study.optimize(objective, n_trials=50)
 
