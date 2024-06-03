@@ -1,202 +1,293 @@
 import torch
 import torch.nn as nn
-import torch.optim as optim
 from torchvision import models
-from torch.utils.tensorboard import SummaryWriter
 import torch.nn.functional as F
+import torch.optim as optim
+from torch.utils.tensorboard import SummaryWriter
 
-# Define the Channel Attention Block
 class ChannelAttention(nn.Module):
     def __init__(self, in_channels):
         super(ChannelAttention, self).__init__()
-        self.avg_pool = nn.AdaptiveAvgPool2d(1)
-        self.max_pool = nn.AdaptiveMaxPool2d(1)
-        self.fc = nn.Sequential(
-            nn.Conv2d(in_channels, in_channels // 16, kernel_size=1, stride=1, padding=0),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(in_channels // 16, in_channels, kernel_size=1, stride=1, padding=0)
-        )
+        self.bn = nn.BatchNorm2d(in_channels)
+        self.gamma = nn.Parameter(torch.zeros(1))
+        self.beta = nn.Parameter(torch.zeros(1))
         self.sigmoid = nn.Sigmoid()
 
     def forward(self, x):
-        avg_out = self.fc(self.avg_pool(x))
-        max_out = self.fc(self.max_pool(x))
-        out = avg_out + max_out
-        return x * self.sigmoid(out)
+        bn_out = self.bn(x)
+        weights = self.gamma / torch.sqrt(torch.var(bn_out, dim=[0, 2, 3], keepdim=True) + 1e-5)
+        mc = self.sigmoid(weights * bn_out)
+        return mc * x
 
-# Define the Spatial Attention Block
 class SpatialAttention(nn.Module):
-    def __init__(self):
+    def __init__(self, in_channels):
         super(SpatialAttention, self).__init__()
-        self.conv1 = nn.Conv2d(2, 1, kernel_size=7, padding=3, bias=False)
+        self.conv1 = nn.Conv2d(2, 1, kernel_size=7, padding=3)
         self.sigmoid = nn.Sigmoid()
 
     def forward(self, x):
         avg_out = torch.mean(x, dim=1, keepdim=True)
         max_out, _ = torch.max(x, dim=1, keepdim=True)
-        out = torch.cat([avg_out, max_out], dim=1)
-        out = self.conv1(out)
-        return x * self.sigmoid(out)
+        combined = torch.cat([avg_out, max_out], dim=1)
+        ms = self.sigmoid(self.conv1(combined))
+        return ms * x
 
-# Define the Cooperative Attention Block
 class CooperativeAttention(nn.Module):
     def __init__(self, in_channels):
         super(CooperativeAttention, self).__init__()
         self.channel_attention = ChannelAttention(in_channels)
-        self.spatial_attention = SpatialAttention()
+        self.spatial_attention = SpatialAttention(in_channels)
 
     def forward(self, x):
         x = self.channel_attention(x)
         x = self.spatial_attention(x)
         return x
 
-# Define the Residual Block
+
+class ConvBlock(nn.Module):
+    def __init__(self, in_channels):
+        super(ConvBlock, self).__init__()
+        self.conv = nn.Conv2d(in_channels, in_channels, kernel_size=3, padding=1)
+        self.bn = nn.BatchNorm2d(in_channels)
+        self.lrelu = nn.LeakyReLU(0.2, inplace=True)
+    
+    def forward(self, x):
+        return self.lrelu(self.bn(self.conv(x)))
+
 class ResidualBlock(nn.Module):
     def __init__(self, in_channels):
         super(ResidualBlock, self).__init__()
         self.conv1 = nn.Conv2d(in_channels, in_channels, kernel_size=3, padding=1)
         self.bn1 = nn.BatchNorm2d(in_channels)
         self.relu = nn.ReLU(inplace=True)
-        self.conv2 = nn.Conv2d(in_channels, in_channels, kernel_size=3, padding=1)
         self.bn2 = nn.BatchNorm2d(in_channels)
-
+        self.conv2 = nn.Conv2d(in_channels, in_channels, kernel_size=3, padding=1)
+    
     def forward(self, x):
-        residual = x
+        identity = x
         out = self.conv1(x)
         out = self.bn1(out)
         out = self.relu(out)
-        out = self.conv2(out)
         out = self.bn2(out)
-        out += residual
+        out = self.conv2(out)
+        out += identity
+        out = self.relu(out)
         return out
 
-# Define the Generator with updated architecture
-class RCAGANGenerator(nn.Module):
-    def __init__(self):
-        super(RCAGANGenerator, self).__init__()
+class DeconvBlock(nn.Module):
+    def __init__(self, in_channels):
+        super(DeconvBlock, self).__init__()
+        self.conv = nn.ConvTranspose2d(in_channels, in_channels, kernel_size=3, padding=1)
+        self.bn = nn.BatchNorm2d(in_channels)
+        self.lrelu = nn.LeakyReLU(0.2, inplace=True)
+    
+    def forward(self, x):
+        return self.lrelu(self.bn(self.conv(x)))
+
+class Generator(nn.Module):
+    def __init__(self, in_channels, out_channels):
+        super(Generator, self).__init__()
+
+        # Feature Extraction Part
         self.feature_extraction = nn.Sequential(
-            nn.Conv2d(1, 64, kernel_size=1),
+            nn.Conv2d(in_channels, 64, kernel_size=1),
+            nn.ReLU(inplace=True),
             nn.Conv2d(64, 64, kernel_size=3, padding=1),
+            nn.ReLU(inplace=True),
             nn.Conv2d(64, 64, kernel_size=5, padding=2),
-            nn.Conv2d(64, 64, kernel_size=7, padding=3)
+            nn.ReLU(inplace=True),
+            nn.Conv2d(64, 64, kernel_size=7, padding=3),
+            nn.ReLU(inplace=True)
         )
-        self.conv1 = nn.Conv2d(64, 64, kernel_size=3, padding=1)
-        self.conv_blocks = nn.Sequential(
-            *[ResidualBlock(64) for _ in range(9)]
-        )
-        self.coop_attention = CooperativeAttention(64)
-        self.deconv_blocks = nn.Sequential(
-            nn.ConvTranspose2d(64, 64, kernel_size=3, padding=1),
-            nn.ConvTranspose2d(64, 1, kernel_size=1)
-        )
+
+        # Feature Domain Denoising Part
+        self.denoising_blocks = nn.Sequential(*[ConvBlock(64) for _ in range(8)])
+
+        # One Convolution Block
+        self.one_conv_block = ConvBlock(64)
+
+        # Cooperative Attention
+        self.cooperative_attention = CooperativeAttention(64)
+
+        # Residual Blocks
+        self.residual_blocks = nn.Sequential(*[ResidualBlock(64) for _ in range(9)])
+
+        # Deconvolution Blocks
+        self.deconv_blocks = nn.Sequential(*[DeconvBlock(64) for _ in range(5)])
+
+        # Final Convolution to output
+        self.final_conv = nn.Conv2d(64, out_channels, kernel_size=3, padding=1)
         self.tanh = nn.Tanh()
 
     def forward(self, x):
-        features = self.feature_extraction(x)
-        x = self.conv1(features)
-        x = self.conv_blocks(x)
-        x = self.coop_attention(x)
-        x = self.deconv_blocks(x)
-        x = self.tanh(x)
+        # Feature Extraction
+        feature_extraction_output = self.feature_extraction(x)
+        
+        # Feature Domain Denoising
+        denoising_output = self.denoising_blocks(feature_extraction_output)
+        
+        # Subtract feature extraction result from denoising output
+        denoising_output = feature_extraction_output - denoising_output
+        
+        # One Convolution Block
+        conv_block_output = self.one_conv_block(denoising_output)
+        
+        # Cooperative Attention
+        attention_output = self.cooperative_attention(conv_block_output)
+        
+        # Residual Blocks
+        residual_output = self.residual_blocks(attention_output)
+        
+        # Add residual output to conv_block_output
+        combined_output = residual_output + conv_block_output
+        
+        # Deconvolution Blocks
+        deconv_output = self.deconv_blocks(combined_output)
+        
+        # Final Convolution and Tanh
+        output = self.tanh(self.final_conv(deconv_output))
+        
+        return output
+
+
+class Discriminator(nn.Module):
+    def __init__(self, in_channels):
+        super(Discriminator, self).__init__()
+        self.conv1 = nn.Conv2d(in_channels, 64, kernel_size=3, stride=1, padding=1)
+        self.conv2 = nn.Conv2d(64, 64, kernel_size=3, stride=2, padding=1)
+        self.conv3 = nn.Conv2d(64, 128, kernel_size=3, stride=1, padding=1)
+        self.conv4 = nn.Conv2d(128, 128, kernel_size=3, stride=2, padding=1)
+        self.conv5 = nn.Conv2d(128, 256, kernel_size=3, stride=1, padding=1)
+        self.conv6 = nn.Conv2d(256, 256, kernel_size=3, stride=2, padding=1)
+        
+        self.bn64 = nn.BatchNorm2d(64)
+        self.bn128 = nn.BatchNorm2d(128)
+        self.bn256 = nn.BatchNorm2d(256)
+        
+        self.lrelu = nn.LeakyReLU(0.2, inplace=True)
+        
+        # Adjust the input size of the fully connected layer based on the final feature map size
+        self.fc1 = nn.Linear(256 * 32 * 32, 1024)  # For 256x256 input images
+        self.fc2 = nn.Linear(1024, 1)
+    
+    def forward(self, x):
+        x = self.lrelu(self.bn64(self.conv1(x)))
+        x = self.lrelu(self.bn64(self.conv2(x)))
+        x = self.lrelu(self.bn128(self.conv3(x)))
+        x = self.lrelu(self.bn128(self.conv4(x)))
+        x = self.lrelu(self.bn256(self.conv5(x)))
+        x = self.lrelu(self.bn256(self.conv6(x)))
+        
+        x = x.view(x.size(0), -1)  # flatten
+        x = self.lrelu(self.fc1(x))
+        x = self.fc2(x)
         return x
 
-# Define the PatchGAN Discriminator with updated architecture
-class PatchGAN(nn.Module):
-    def __init__(self, in_channels=2):
-        super(PatchGAN, self).__init__()
-        self.conv_layers = nn.Sequential(
-            nn.Conv2d(in_channels, 64, kernel_size=4, stride=2, padding=1),
-            nn.BatchNorm2d(64),
-            nn.LeakyReLU(0.2, inplace=True),
-            nn.Conv2d(64, 128, kernel_size=4, stride=2, padding=1),
-            nn.BatchNorm2d(128),
-            nn.LeakyReLU(0.2, inplace=True),
-            nn.Conv2d(128, 256, kernel_size=4, stride=2, padding=1),
-            nn.BatchNorm2d(256),
-            nn.LeakyReLU(0.2, inplace=True),
-            nn.Conv2d(256, 512, kernel_size=4, stride=2, padding=1),
-            nn.BatchNorm2d(512),
-            nn.LeakyReLU(0.2, inplace=True)
-        )
-        self.flatten = nn.Flatten()
-        self.fc1 = nn.Linear(512 * 16 * 16, 1024)  # Corrected input size
-        self.leaky_relu = nn.LeakyReLU(0.2, inplace=True)
-        self.fc2 = nn.Linear(1024, 1)
-        self.sigmoid = nn.Sigmoid()
 
-    def forward(self, x):
-        x = self.conv_layers(x)
-        x = self.flatten(x)
-        x = self.fc1(x)
-        x = self.leaky_relu(x)
-        x = self.fc2(x)
-        return self.sigmoid(x)
-
-
-# Define the VGG Perceptual Loss (modified for single-channel)
-class VGGPerceptualLoss(nn.Module):
-    def __init__(self):
-        super(VGGPerceptualLoss, self).__init__()
-        vgg = models.vgg19(weights=models.VGG19_Weights.IMAGENET1K_V1).features
-        self.layers = nn.Sequential(*list(vgg.children())[:16])
-        for param in self.layers.parameters():
+class PerceptualLoss(nn.Module):
+    def __init__(self, feature_layer=8):
+        super(PerceptualLoss, self).__init__()
+        vgg = models.vgg19(pretrained=True).features
+        self.feature_extractor = nn.Sequential(*list(vgg.children())[:feature_layer]).eval()
+        for param in self.feature_extractor.parameters():
             param.requires_grad = False
 
-    def forward(self, x, y):
-        x = x.expand(-1, 3, -1, -1)
-        y = y.expand(-1, 3, -1, -1)
-        x_vgg = self.layers(x)
-        y_vgg = self.layers(y)
-        return nn.functional.l1_loss(x_vgg, y_vgg)
+    def forward(self, img1, img2):
+        if img1.size(1) == 1:  # Convert single-channel to 3-channel
+            img1 = img1.repeat(1, 3, 1, 1)
+            img2 = img2.repeat(1, 3, 1, 1)
+        f1 = self.feature_extractor(img1)
+        f2 = self.feature_extractor(img2)
+        return F.mse_loss(f1, f2)
 
-# Define the Multimodal Loss Function
-def multimodal_loss(gen_clean, clean, disc_output, real_labels, lambda_pixel, lambda_perceptual, lambda_texture, vgg_loss):
-    # Adversarial Loss
-    loss_adv = nn.BCELoss()(disc_output, real_labels)
+class TextureLoss(nn.Module):
+    def gram_matrix(self, input):
+        a, b, c, d = input.size()  # a=batch size(=1)
+        features = input.view(a * b, c * d)  # resise F_XL into \hat F_XL
+        G = torch.mm(features, features.t())  # compute the gram product
+        return G.div(a * b * c * d)
 
-    # Pixel-wise Loss
-    loss_pixel = nn.L1Loss()(gen_clean, clean)
+    def forward(self, img1, img2):
+        G1 = self.gram_matrix(img1)
+        G2 = self.gram_matrix(img2)
+        return F.mse_loss(G1, G2)
 
-    # Perceptual Loss
-    loss_perceptual = vgg_loss(gen_clean, clean)
+class ContentLoss(nn.Module):
+    def forward(self, img1, img2):
+        return F.l1_loss(img1, img2)
 
-    # Texture Loss
-    loss_texture = edge_loss(gen_clean, clean)
+class WGAN_GP_Loss(nn.Module):
+    def __init__(self, discriminator, lambda_gp=10):
+        super(WGAN_GP_Loss, self).__init__()
+        self.discriminator = discriminator
+        self.lambda_gp = lambda_gp
 
-    # Total Loss
-    total_loss = lambda_pixel * loss_pixel + lambda_perceptual * loss_perceptual + lambda_texture * loss_texture + loss_adv
-    return total_loss
+    def gradient_penalty(self, real_images, fake_images):
+        batch_size, c, h, w = real_images.size()
+        epsilon = torch.rand(batch_size, 1, 1, 1, device=real_images.device)
+        epsilon = epsilon.expand_as(real_images)
+        interpolation = epsilon * real_images + (1 - epsilon) * fake_images
+        interpolation.requires_grad_(True)
 
-# Define Edge Loss for Texture Preservation
-def edge_loss(gen, clean):
-    sobel_kernel_x = torch.tensor([[1, 0, -1], [2, 0, -2], [1, 0, -1]], dtype=torch.float32).unsqueeze(0).unsqueeze(0).to(gen.device)
-    sobel_kernel_y = torch.tensor([[1, 2, 1], [0, 0, 0], [-1, -2, -1]], dtype=torch.float32).unsqueeze(0).unsqueeze(0).to(gen.device)
+        interpolation_logits = self.discriminator(interpolation)
+        gradients = torch.autograd.grad(
+            outputs=interpolation_logits,
+            inputs=interpolation,
+            grad_outputs=torch.ones_like(interpolation_logits),
+            create_graph=True,
+            retain_graph=True,
+            only_inputs=True
+        )[0]
+
+        gradients = gradients.view(batch_size, -1)
+        gradient_norm = gradients.norm(2, dim=1)
+        gradient_penalty = self.lambda_gp * ((gradient_norm - 1) ** 2).mean()
+        return gradient_penalty
+
+    def forward(self, real_images, fake_images):
+        d_real = self.discriminator(real_images).mean()
+        d_fake = self.discriminator(fake_images).mean()
+        gp = self.gradient_penalty(real_images, fake_images)
+        return d_fake - d_real + gp
+
+class MultimodalLoss(nn.Module):
+    def __init__(self, discriminator, lambda1, lambda2, lambda3, lambda4):
+        super(MultimodalLoss, self).__init__()
+        self.perceptual_loss = PerceptualLoss()
+        self.content_loss = ContentLoss()
+        self.texture_loss = TextureLoss()
+        self.adversarial_loss = WGAN_GP_Loss(discriminator)
+        self.lambda1 = lambda1
+        self.lambda2 = lambda2
+        self.lambda3 = lambda3
+        self.lambda4 = lambda4
+
+    def forward(self, generated_images, real_images, noisy_images):
+        l_percep = self.perceptual_loss(real_images, generated_images)
+        l_content = torch.sqrt(self.content_loss(generated_images, real_images) ** 2 + 1e-8)
+        l_texture = self.texture_loss(generated_images, real_images)
+        l_adversarial = self.adversarial_loss(real_images, generated_images)
+        total_loss = self.lambda1 * l_percep + self.lambda2 * l_content + self.lambda3 * l_texture + self.lambda4 * l_adversarial
+        return total_loss
     
-    gen_x = F.conv2d(gen, sobel_kernel_x, padding=1)
-    gen_y = F.conv2d(gen, sobel_kernel_y, padding=1)
-    gen_edges = torch.sqrt(gen_x**2 + gen_y**2 + 1e-6)
 
-    clean_x = F.conv2d(clean, sobel_kernel_x, padding=1)
-    clean_y = F.conv2d(clean, sobel_kernel_y, padding=1)
-    clean_edges = torch.sqrt(clean_x**2 + clean_y**2 + 1e-6)
-    
-    return nn.functional.l1_loss(gen_edges, clean_edges)
-
-# Denormalize function
+# Denormalize function for TensorBoard visualization
 def denormalize(tensor):
     return tensor * 0.5 + 0.5
 
+# Define the training function for RCA-GAN
+# Training loop
 def train_rca_gan(train_loader, val_loader, num_epochs=200, lambda_pixel=100, lambda_perceptual=0.1, lambda_texture=1.0,
-                  lr=0.0001, betas=(0.5, 0.999), device=torch.device("cuda" if torch.cuda.is_available() else "mps")):
-    # Initialize the model
-    generator = RCAGANGenerator().to(device)
-    discriminator = PatchGAN().to(device)
+                  lr=0.0001, betas=(0.5, 0.999), device=torch.device("cuda" if torch.cuda.is_available() else "cpu")):
+    # Initialize the models
+    in_channels = 1
+    out_channels = 1
+    generator = Generator(in_channels, out_channels).to(device)
+    discriminator = Discriminator(in_channels).to(device)
+    multimodal_loss = MultimodalLoss(discriminator, lambda_pixel, lambda_perceptual, lambda_texture, 1).to(device)
 
     # Initialize TensorBoard writer
     writer = SummaryWriter()
-
-    # Loss functions
-    vgg_loss = VGGPerceptualLoss().to(device)
 
     # Optimizers
     optimizer_G = optim.Adam(generator.parameters(), lr=lr, betas=betas)
@@ -209,9 +300,9 @@ def train_rca_gan(train_loader, val_loader, num_epochs=200, lambda_pixel=100, la
     global_step = 0
 
     for epoch in range(num_epochs):
-        for i, (noisy_images, clean_images) in enumerate(train_loader):
-            noisy_images = noisy_images.to(device)
-            clean_images = clean_images.to(device)
+        for i, (real_images, _) in enumerate(train_loader):
+            real_images = real_images.to(device)
+            noisy_images = real_images + 0.1 * torch.randn_like(real_images).to(device)  # Add some noise
 
             # Train Discriminator
             optimizer_D.zero_grad()
@@ -220,14 +311,14 @@ def train_rca_gan(train_loader, val_loader, num_epochs=200, lambda_pixel=100, la
             gen_clean = generator(noisy_images)
             
             # Prepare real and fake data for discriminator
-            real_data = torch.cat((noisy_images, clean_images), 1)
-            fake_data = torch.cat((noisy_images, gen_clean.detach()), 1)
+            real_data = real_images
+            fake_data = gen_clean.detach()
             
             # Get discriminator outputs
             real_output = discriminator(real_data)
             fake_output = discriminator(fake_data)
             
-            # Match label size with discriminator output size
+            # Labels for real and fake data
             real_labels = torch.ones_like(real_output) * 0.9
             fake_labels = torch.zeros_like(real_output) * 0.1
 
@@ -240,18 +331,18 @@ def train_rca_gan(train_loader, val_loader, num_epochs=200, lambda_pixel=100, la
 
             # Train Generator
             optimizer_G.zero_grad()
-            fake_data = torch.cat((noisy_images, gen_clean), 1)
-            disc_output = discriminator(fake_data)
+            fake_output = discriminator(gen_clean)
             
-            # Match label size with discriminator output size for generator
-            real_labels = torch.ones_like(disc_output) * 0.9
+            # Labels for generator training
+            real_labels = torch.ones_like(fake_output) * 0.9
             
-            g_loss = multimodal_loss(gen_clean, clean_images, disc_output, real_labels, lambda_pixel, lambda_perceptual, lambda_texture, vgg_loss)
+            g_loss = multimodal_loss(gen_clean, real_images, noisy_images)
             g_loss.backward()
             optimizer_G.step()
 
             # Print training progress
-            print(f"[Epoch {epoch}/{num_epochs}] [Batch {i}/{len(train_loader)}] [D loss: {d_loss.item()}] [G loss: {g_loss.item()}]")
+            if i % 100 == 0:
+                print(f"[Epoch {epoch}/{num_epochs}] [Batch {i}/{len(train_loader)}] [D loss: {d_loss.item()}] [G loss: {g_loss.item()}]")
 
             # Log batch losses to TensorBoard
             writer.add_scalar('Loss/Discriminator', d_loss.item(), global_step)
@@ -261,7 +352,7 @@ def train_rca_gan(train_loader, val_loader, num_epochs=200, lambda_pixel=100, la
         # Log example images to TensorBoard at the end of each epoch
         with torch.no_grad():
             example_noisy = noisy_images[:4].cpu()  # Take first 4 examples from the last batch
-            example_clean = clean_images[:4].cpu()
+            example_clean = real_images[:4].cpu()
             example_gen = generator(example_noisy.to(device)).cpu()
             
             # Denormalize images to [0, 1] for better visualization
