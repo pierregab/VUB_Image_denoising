@@ -275,10 +275,9 @@ class MultimodalLoss(nn.Module):
 def denormalize(tensor):
     return tensor * 0.5 + 0.5
 
-# Define the training function for RCA-GAN
 # Training loop
 def train_rca_gan(train_loader, val_loader, num_epochs=200, lambda_pixel=100, lambda_perceptual=0.1, lambda_texture=1.0,
-                  lr=0.0001, betas=(0.5, 0.999), device=torch.device("cuda" if torch.cuda.is_available() else "cpu")):
+                  lr=0.0001, betas=(0.5, 0.999), device=torch.device("cuda" if torch.cuda.is_available() else "mps")):
     # Initialize the models
     in_channels = 1
     out_channels = 1
@@ -318,14 +317,11 @@ def train_rca_gan(train_loader, val_loader, num_epochs=200, lambda_pixel=100, la
             real_output = discriminator(real_data)
             fake_output = discriminator(fake_data)
             
-            # Labels for real and fake data
-            real_labels = torch.ones_like(real_output) * 0.9
-            fake_labels = torch.zeros_like(real_output) * 0.1
-
             # Calculate discriminator loss
-            d_loss_real = nn.BCELoss()(real_output, real_labels)
-            d_loss_fake = nn.BCELoss()(fake_output, fake_labels)
-            d_loss = (d_loss_real + d_loss_fake) / 2
+            d_loss = -torch.mean(real_output) + torch.mean(fake_output)
+            gp = WGAN_GP_Loss(discriminator).gradient_penalty(real_data, fake_data)
+            d_loss += gp
+
             d_loss.backward()
             optimizer_D.step()
 
@@ -333,16 +329,12 @@ def train_rca_gan(train_loader, val_loader, num_epochs=200, lambda_pixel=100, la
             optimizer_G.zero_grad()
             fake_output = discriminator(gen_clean)
             
-            # Labels for generator training
-            real_labels = torch.ones_like(fake_output) * 0.9
-            
             g_loss = multimodal_loss(gen_clean, real_images, noisy_images)
             g_loss.backward()
             optimizer_G.step()
 
             # Print training progress
-            if i % 100 == 0:
-                print(f"[Epoch {epoch}/{num_epochs}] [Batch {i}/{len(train_loader)}] [D loss: {d_loss.item()}] [G loss: {g_loss.item()}]")
+            print(f"[Epoch {epoch}/{num_epochs}] [Batch {i}/{len(train_loader)}] [D loss: {d_loss.item()}] [G loss: {g_loss.item()}]")
 
             # Log batch losses to TensorBoard
             writer.add_scalar('Loss/Discriminator', d_loss.item(), global_step)
