@@ -16,7 +16,7 @@ def start_tensorboard(log_dir):
         print(f"Failed to start TensorBoard: {e}")
 
 def main():
-    log_dir = 'runs/paper_gan'
+    log_dir = 'runs/denoising_gan'
     start_tensorboard(log_dir)
 
     # Use num_workers=0 to avoid multiprocessing issues for debugging
