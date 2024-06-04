@@ -117,6 +117,9 @@ class Generator(nn.Module):
         final_deconv_block = DeconvBlock(64, out_channels, kernel_size=1, stride=1, padding=0)
         self.deconv_blocks = nn.Sequential(*deconv_blocks, final_deconv_block)
 
+        # Final tanh activation for output
+        self.final_activation = nn.Tanh()
+
     def forward(self, x):
         # Feature Extraction
         feature_extraction_output = self.feature_extraction(x)
@@ -140,7 +143,13 @@ class Generator(nn.Module):
         combined_output = residual_output + conv_block_output
         
         # Deconvolution Blocks
-        output = self.deconv_blocks(combined_output)
+        deconv_output = self.deconv_blocks(combined_output)
+        
+        # Add global cross-layer connection from input to the final output
+        final_output = deconv_output + x
+        
+        # Apply final tanh activation to map to pixel value range
+        output = self.final_activation(final_output)
         
         return output
 
