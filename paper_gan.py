@@ -208,7 +208,7 @@ class PerceptualLoss(nn.Module):
 class TextureLoss(nn.Module):
     def gram_matrix(self, input):
         a, b, c, d = input.size()  # a=batch size(=1)
-        features = input.view(a * b, c * d)  # resise F_XL into \hat F_XL
+        features = input.view(a * b, c * d)  # resize F_XL into \hat F_XL
         G = torch.mm(features, features.t())  # compute the gram product
         return G.div(a * b * c * d)
 
@@ -219,7 +219,7 @@ class TextureLoss(nn.Module):
 
 class ContentLoss(nn.Module):
     def forward(self, img1, img2):
-        return F.l1_loss(img1, img2)
+        return torch.sqrt(F.l1_loss(img1, img2) ** 2 + 1e-8)
 
 class WGAN_GP_Loss(nn.Module):
     def __init__(self, discriminator, lambda_gp=10):
@@ -269,7 +269,7 @@ class MultimodalLoss(nn.Module):
 
     def forward(self, generated_images, real_images, noisy_images):
         l_percep = self.perceptual_loss(real_images, generated_images)
-        l_content = torch.sqrt(self.content_loss(generated_images, real_images) ** 2 + 1e-8)
+        l_content = self.content_loss(generated_images, real_images)
         l_texture = self.texture_loss(generated_images, real_images)
         l_adversarial = self.adversarial_loss(real_images, generated_images)
         total_loss = self.lambda1 * l_percep + self.lambda2 * l_content + self.lambda3 * l_texture + self.lambda4 * l_adversarial
