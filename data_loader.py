@@ -5,7 +5,7 @@ from torch.utils.data import DataLoader, random_split
 import matplotlib.pyplot as plt
 from custom_dataset import CustomDataset  # Ensure custom_dataset.py is in the same directory or in your PYTHONPATH
 
-def load_data(gt_folder, degraded_folder, batch_size=4, num_workers=4, validation_split=0.2):
+def load_data(gt_folder, degraded_folder, batch_size=4, num_workers=4, validation_split=0.2, augment=False):
     """
     Load and preprocess the dataset, returning training and validation DataLoaders.
 
@@ -15,17 +15,29 @@ def load_data(gt_folder, degraded_folder, batch_size=4, num_workers=4, validatio
     - batch_size (int): Number of samples per batch.
     - num_workers (int): Number of worker processes for data loading.
     - validation_split (float): Fraction of the dataset to use for validation.
+    - augment (bool): Whether to apply data augmentation to the training set.
 
     Returns:
     - train_loader (DataLoader): DataLoader for the training dataset.
     - val_loader (DataLoader): DataLoader for the validation dataset.
     """
 
-    # Define the transform to convert images to tensors and normalize them
-    transform = transforms.Compose([
+    # Define basic transform
+    basic_transform = transforms.Compose([
         transforms.ToTensor(),
         transforms.Normalize(mean=[0.5], std=[0.5])  # Normalize grayscale images
     ])
+
+    # Define augmentation transform
+    augmentation_transform = transforms.Compose([
+        transforms.RandomHorizontalFlip(),
+        transforms.RandomRotation(10),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=[0.5], std=[0.5])  # Normalize grayscale images
+    ])
+
+    # Choose transform based on the augment parameter
+    transform = augmentation_transform if augment else basic_transform
 
     dataset = CustomDataset(gt_folder, degraded_folder, transform=transform)
 
