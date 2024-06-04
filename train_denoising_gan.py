@@ -171,7 +171,7 @@ def edge_loss(gen, clean):
     return nn.functional.l1_loss(gen_edges, clean_edges)
 
 def train_denoising_gan(train_loader, val_loader, num_epochs=200, lambda_pixel=100, lambda_perceptual=0.1, lambda_edge=1.0, lambda_gp=10,
-                        lr=0.0001, betas=(0.5, 0.999), device=torch.device("cpu"), log_dir='runs/denoising_gan',
+                        lr=0.0001, betas=(0.5, 0.999), device=torch.device("cuda" if torch.cuda.is_available() else "mps"), log_dir='runs/denoising_gan',
                         checkpoint_dir='checkpoints', checkpoint_prefix='denoising_gan'):
     # Initialize the model
     generator = UNet().to(device)
