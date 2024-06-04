@@ -286,8 +286,10 @@ def train_rca_gan(train_loader, val_loader, num_epochs=200, lambda_pixel=100, la
     discriminator = Discriminator(in_channels).to(device)
     multimodal_loss = MultimodalLoss(discriminator, lambda_pixel, lambda_perceptual, lambda_texture, 1).to(device)
 
+    log_dir='runs/paper_gan'
+
     # Initialize TensorBoard writer
-    writer = SummaryWriter()
+    writer = SummaryWriter(log_dir=log_dir)
 
     # Optimizers
     optimizer_G = optim.Adam(generator.parameters(), lr=lr, betas=betas)
