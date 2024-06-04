@@ -20,7 +20,7 @@ def main():
     start_tensorboard(log_dir)
 
     # Use num_workers=0 to avoid multiprocessing issues for debugging
-    train_loader, val_loader = load_data(gt_folder, degraded_folder, batch_size=8, num_workers=8, validation_split=0.2)
+    train_loader, val_loader = load_data(gt_folder, degraded_folder, batch_size=4, num_workers=4, validation_split=0.2)
 
     # Train the model with the current hyperparameters
     train_rca_gan(
