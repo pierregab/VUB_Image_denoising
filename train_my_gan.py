@@ -2,7 +2,7 @@ import torch
 import optuna
 import subprocess
 from data_loader import load_data
-from paper_gan import train_rca_gan
+from train_denoising_gan import train_denoising_gan
 
 # Define paths to ground truth and degraded images
 gt_folder = 'DIV2K_train_HR.nosync/resized_ground_truth_images'
@@ -23,10 +23,10 @@ def main():
     train_loader, val_loader = load_data(gt_folder, degraded_folder, batch_size=8, num_workers=8, validation_split=0.2)
 
     # Train the model with the current hyperparameters
-    train_rca_gan(
-        train_loader, val_loader, num_epochs=200,
-        lambda_pixel=100, lambda_perceptual=0.1,
-        lambda_texture=1.0, lr=0.0001, betas=(0.5, 0.999),
+    train_denoising_gan(
+        train_loader, val_loader, num_epochs=50,
+        lambda_pixel=25.874, lambda_perceptual=0.04481, lambda_edge=0.6877, lambda_gp= 9.511,
+        lr=0.0002714, betas=(0.7074, 0.92944),
     )
 
 if __name__ == '__main__':

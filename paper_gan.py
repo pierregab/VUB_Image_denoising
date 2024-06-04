@@ -43,7 +43,6 @@ class CooperativeAttention(nn.Module):
         x = self.spatial_attention(x)
         return x
 
-
 class ConvBlock(nn.Module):
     def __init__(self, in_channels):
         super(ConvBlock, self).__init__()
@@ -75,10 +74,10 @@ class ResidualBlock(nn.Module):
         return out
 
 class DeconvBlock(nn.Module):
-    def __init__(self, in_channels):
+    def __init__(self, in_channels, out_channels, kernel_size=3, stride=1, padding=1):
         super(DeconvBlock, self).__init__()
-        self.conv = nn.ConvTranspose2d(in_channels, in_channels, kernel_size=3, padding=1)
-        self.bn = nn.BatchNorm2d(in_channels)
+        self.conv = nn.ConvTranspose2d(in_channels, out_channels, kernel_size=kernel_size, stride=stride, padding=padding)
+        self.bn = nn.BatchNorm2d(out_channels)
         self.lrelu = nn.LeakyReLU(0.2, inplace=True)
     
     def forward(self, x):
@@ -113,11 +112,10 @@ class Generator(nn.Module):
         self.residual_blocks = nn.Sequential(*[ResidualBlock(64) for _ in range(9)])
 
         # Deconvolution Blocks
-        self.deconv_blocks = nn.Sequential(*[DeconvBlock(64) for _ in range(5)])
-
-        # Final Convolution to output
-        self.final_conv = nn.Conv2d(64, out_channels, kernel_size=3, padding=1)
-        self.tanh = nn.Tanh()
+        deconv_blocks = [DeconvBlock(64, 64, kernel_size=3) for _ in range(4)]
+        # Custom DeconvBlock for the final layer with different out_channels
+        final_deconv_block = DeconvBlock(64, out_channels, kernel_size=1, stride=1, padding=0)
+        self.deconv_blocks = nn.Sequential(*deconv_blocks, final_deconv_block)
 
     def forward(self, x):
         # Feature Extraction
@@ -142,13 +140,9 @@ class Generator(nn.Module):
         combined_output = residual_output + conv_block_output
         
         # Deconvolution Blocks
-        deconv_output = self.deconv_blocks(combined_output)
-        
-        # Final Convolution and Tanh
-        output = self.tanh(self.final_conv(deconv_output))
+        output = self.deconv_blocks(combined_output)
         
         return output
-
 
 class Discriminator(nn.Module):
     def __init__(self, in_channels):
@@ -182,7 +176,6 @@ class Discriminator(nn.Module):
         x = self.lrelu(self.fc1(x))
         x = self.fc2(x)
         return x
-
 
 class PerceptualLoss(nn.Module):
     def __init__(self, feature_layer=8):
@@ -269,7 +262,6 @@ class MultimodalLoss(nn.Module):
         l_adversarial = self.adversarial_loss(real_images, generated_images)
         total_loss = self.lambda1 * l_percep + self.lambda2 * l_content + self.lambda3 * l_texture + self.lambda4 * l_adversarial
         return total_loss
-    
 
 # Denormalize function for TensorBoard visualization
 def denormalize(tensor):
@@ -299,18 +291,18 @@ def train_rca_gan(train_loader, val_loader, num_epochs=200, lambda_pixel=100, la
     global_step = 0
 
     for epoch in range(num_epochs):
-        for i, (real_images, _) in enumerate(train_loader):
-            real_images = real_images.to(device)
-            noisy_images = real_images + 0.1 * torch.randn_like(real_images).to(device)  # Add some noise
+        for i, (degraded_images, gt_images) in enumerate(train_loader):
+            degraded_images = degraded_images.to(device)
+            gt_images = gt_images.to(device)
 
             # Train Discriminator
             optimizer_D.zero_grad()
             
             # Generate clean images
-            gen_clean = generator(noisy_images)
+            gen_clean = generator(degraded_images)
             
             # Prepare real and fake data for discriminator
-            real_data = real_images
+            real_data = gt_images
             fake_data = gen_clean.detach()
             
             # Get discriminator outputs
@@ -329,12 +321,13 @@ def train_rca_gan(train_loader, val_loader, num_epochs=200, lambda_pixel=100, la
             optimizer_G.zero_grad()
             fake_output = discriminator(gen_clean)
             
-            g_loss = multimodal_loss(gen_clean, real_images, noisy_images)
+            g_loss = multimodal_loss(gen_clean, gt_images, degraded_images)
             g_loss.backward()
             optimizer_G.step()
 
             # Print training progress
-            print(f"[Epoch {epoch}/{num_epochs}] [Batch {i}/{len(train_loader)}] [D loss: {d_loss.item()}] [G loss: {g_loss.item()}]")
+            if i % 10 == 0:
+                print(f"[Epoch {epoch}/{num_epochs}] [Batch {i}/{len(train_loader)}] [D loss: {d_loss.item()}] [G loss: {g_loss.item()}]")
 
             # Log batch losses to TensorBoard
             writer.add_scalar('Loss/Discriminator', d_loss.item(), global_step)
@@ -343,19 +336,19 @@ def train_rca_gan(train_loader, val_loader, num_epochs=200, lambda_pixel=100, la
             
         # Log example images to TensorBoard at the end of each epoch
         with torch.no_grad():
-            example_noisy = noisy_images[:4].cpu()  # Take first 4 examples from the last batch
-            example_clean = real_images[:4].cpu()
-            example_gen = generator(example_noisy.to(device)).cpu()
+            example_degraded = degraded_images[:4].cpu()  # Take first 4 examples from the last batch
+            example_gt = gt_images[:4].cpu()
+            example_gen = generator(example_degraded.to(device)).cpu()
             
             # Denormalize images to [0, 1] for better visualization
-            example_noisy = denormalize(example_noisy)
-            example_clean = denormalize(example_clean)
+            example_degraded = denormalize(example_degraded)
+            example_gt = denormalize(example_gt)
             example_gen = denormalize(example_gen)
 
             # Log images
-            writer.add_images('Noisy Images', example_noisy, epoch)
+            writer.add_images('Degraded Images', example_degraded, epoch)
             writer.add_images('Generated Images', example_gen, epoch)
-            writer.add_images('Clean Images', example_clean, epoch)
+            writer.add_images('Ground Truth Images', example_gt, epoch)
 
         scheduler_G.step()
         scheduler_D.step()
@@ -366,3 +359,4 @@ def train_rca_gan(train_loader, val_loader, num_epochs=200, lambda_pixel=100, la
 
     print("Training finished.")
     writer.close()
+
