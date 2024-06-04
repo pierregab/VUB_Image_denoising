@@ -15,8 +15,11 @@ class ChannelAttention(nn.Module):
 
     def forward(self, x):
         bn_out = self.bn(x)
-        weights = self.gamma / torch.sqrt(torch.var(bn_out, dim=[0, 2, 3], keepdim=True) + 1e-5)
-        mc = self.sigmoid(weights * bn_out)
+        mu = torch.mean(bn_out, dim=[0, 2, 3], keepdim=True)
+        var = torch.var(bn_out, dim=[0, 2, 3], keepdim=True)
+        weights = self.gamma / torch.sqrt(var + 1e-5)
+        normalized_bn_out = (bn_out - mu) / torch.sqrt(var + 1e-5)
+        mc = self.sigmoid(weights * normalized_bn_out + self.beta)
         return mc * x
 
 class SpatialAttention(nn.Module):
