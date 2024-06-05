@@ -24,7 +24,7 @@ def main():
 
     # Train the model with the current hyperparameters
     train_rca_gan(
-        train_loader, val_loader, num_epochs=20, lr=0.0001, betas=(0.5, 0.999),
+        train_loader, val_loader, num_epochs=100, lr=0.0001, betas=(0.5, 0.999),
     )
 
 if __name__ == '__main__':
