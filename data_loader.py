@@ -5,7 +5,7 @@ from torch.utils.data import DataLoader, random_split
 import matplotlib.pyplot as plt
 from custom_dataset import CustomDataset  # Ensure custom_dataset.py is in the same directory or in your PYTHONPATH
 
-def load_data(gt_folder, degraded_folder, batch_size=4, num_workers=4, validation_split=0.2, augment=False):
+def load_data(gt_folder, degraded_folder, batch_size=4, num_workers=4, validation_split=0.2, augment=False, dataset_percentage=1.0):
     """
     Load and preprocess the dataset, returning training and validation DataLoaders.
 
@@ -16,6 +16,7 @@ def load_data(gt_folder, degraded_folder, batch_size=4, num_workers=4, validatio
     - num_workers (int): Number of worker processes for data loading.
     - validation_split (float): Fraction of the dataset to use for validation.
     - augment (bool): Whether to apply data augmentation to the training set.
+    - dataset_percentage (float): Percentage of the total dataset to use (0.0 < dataset_percentage <= 1.0).
 
     Returns:
     - train_loader (DataLoader): DataLoader for the training dataset.
@@ -40,6 +41,13 @@ def load_data(gt_folder, degraded_folder, batch_size=4, num_workers=4, validatio
     transform = augmentation_transform if augment else basic_transform
 
     dataset = CustomDataset(gt_folder, degraded_folder, transform=transform)
+
+    # Determine the size of the dataset to use
+    total_size = len(dataset)
+    subset_size = int(total_size * dataset_percentage)
+
+    if subset_size < total_size:
+        dataset, _ = random_split(dataset, [subset_size, total_size - subset_size])
 
     # Split dataset into train and validation
     train_size = int((1 - validation_split) * len(dataset))

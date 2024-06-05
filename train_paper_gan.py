@@ -1,5 +1,4 @@
 import torch
-import optuna
 import subprocess
 from data_loader import load_data
 from paper_gan import train_rca_gan
@@ -8,7 +7,7 @@ from paper_gan import train_rca_gan
 gt_folder = 'DIV2K_train_HR.nosync/resized_ground_truth_images'
 degraded_folder = 'DIV2K_train_HR.nosync/degraded_images'
 
-def start_tensorboard(log_dir):
+def start_tensorboard(log_dir): 
     try:
         subprocess.Popen(['tensorboard', '--logdir', log_dir])
         print(f"TensorBoard started at http://localhost:6006")
@@ -20,7 +19,8 @@ def main():
     start_tensorboard(log_dir)
 
     # Use num_workers=0 to avoid multiprocessing issues for debugging
-    train_loader, val_loader = load_data(gt_folder, degraded_folder, batch_size=1, num_workers=8, validation_split=0.2, augment=True)
+    train_loader, val_loader = load_data(gt_folder, degraded_folder, batch_size=1, num_workers=8, 
+                                         validation_split=0.2, augment=False, dataset_percentage=0.025)
 
     # Train the model with the current hyperparameters
     train_rca_gan(

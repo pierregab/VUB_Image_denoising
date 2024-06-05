@@ -1,7 +1,7 @@
 import os
-from torchvision import transforms
-from torch.utils.data import Dataset
+import torch
 from PIL import Image
+from torch.utils.data import Dataset
 
 class CustomDataset(Dataset):
     """
@@ -52,8 +52,9 @@ class CustomDataset(Dataset):
         degraded_image = Image.open(degraded_image_path).convert('L')  # Convert to grayscale
 
         if self.transform:
-            gt_image = self.transform(gt_image)
-            degraded_image = self.transform(degraded_image)
+            combined_image = self.transform(Image.merge('RGB', (gt_image, degraded_image, degraded_image)))
+            gt_image = combined_image[0, :, :].unsqueeze(0)
+            degraded_image = combined_image[1, :, :].unsqueeze(0)
 
         return degraded_image, gt_image
 

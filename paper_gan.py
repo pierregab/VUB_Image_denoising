@@ -4,13 +4,14 @@ from torchvision import models
 import torch.nn.functional as F
 import torch.optim as optim
 from torch.utils.tensorboard import SummaryWriter
+import torchvision
 
 class ChannelAttention(nn.Module):
     def __init__(self, in_channels):
         super(ChannelAttention, self).__init__()
         self.bn = nn.BatchNorm2d(in_channels)
-        self.gamma = nn.Parameter(torch.zeros(1))
-        self.beta = nn.Parameter(torch.zeros(1))
+        self.gamma = nn.Parameter(torch.zeros(1))  # Initialize to zeros
+        self.beta = nn.Parameter(torch.zeros(1))  # Initialize to zeros
         self.sigmoid = nn.Sigmoid()
 
     def forward(self, x):
@@ -47,10 +48,10 @@ class CooperativeAttention(nn.Module):
         return x
 
 class ConvBlock(nn.Module):
-    def __init__(self, in_channels):
+    def __init__(self, in_channels, out_channels, kernel_size=3, stride=1, padding=1):
         super(ConvBlock, self).__init__()
-        self.conv = nn.Conv2d(in_channels, in_channels, kernel_size=3, padding=1)
-        self.bn = nn.BatchNorm2d(in_channels)
+        self.conv = nn.Conv2d(in_channels, out_channels, kernel_size=kernel_size, stride=stride, padding=padding)
+        self.bn = nn.BatchNorm2d(out_channels)
         self.lrelu = nn.LeakyReLU(0.2, inplace=True)
     
     def forward(self, x):
@@ -86,27 +87,42 @@ class DeconvBlock(nn.Module):
     def forward(self, x):
         return self.lrelu(self.bn(self.conv(x)))
 
+class MultiScaleConv(nn.Module):
+    def __init__(self, in_channels, out_channels):
+        super(MultiScaleConv, self).__init__()
+        mid_channels = out_channels // 4  # Each branch will produce mid_channels
+        self.conv1x1 = nn.Conv2d(in_channels, mid_channels, kernel_size=1, stride=1, padding=0)
+        self.conv3x3 = nn.Conv2d(in_channels, mid_channels, kernel_size=3, stride=1, padding=1)
+        self.conv5x5 = nn.Conv2d(in_channels, mid_channels, kernel_size=5, stride=1, padding=2)
+        self.conv7x7 = nn.Conv2d(in_channels, mid_channels, kernel_size=7, stride=1, padding=3)
+        self.final_conv = nn.Conv2d(mid_channels * 4, out_channels, kernel_size=1, stride=1, padding=0)
+        
+        self.bn1x1 = nn.BatchNorm2d(mid_channels)
+        self.bn3x3 = nn.BatchNorm2d(mid_channels)
+        self.bn5x5 = nn.BatchNorm2d(mid_channels)
+        self.bn7x7 = nn.BatchNorm2d(mid_channels)
+        self.bn_final = nn.BatchNorm2d(out_channels)
+
+    def forward(self, x):
+        out1x1 = self.bn1x1(self.conv1x1(x))
+        out3x3 = self.bn3x3(self.conv3x3(x))
+        out5x5 = self.bn5x5(self.conv5x5(x))
+        out7x7 = self.bn7x7(self.conv7x7(x))
+        concatenated = torch.cat([out1x1, out3x3, out5x5, out7x7], dim=1)
+        return self.bn_final(self.final_conv(concatenated))
+
 class Generator(nn.Module):
     def __init__(self, in_channels, out_channels):
         super(Generator, self).__init__()
 
-        # Feature Extraction Part
-        self.feature_extraction = nn.Sequential(
-            nn.Conv2d(in_channels, 64, kernel_size=1),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(64, 64, kernel_size=3, padding=1),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(64, 64, kernel_size=5, padding=2),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(64, 64, kernel_size=7, padding=3),
-            nn.ReLU(inplace=True)
-        )
+        # Initial Multi-Scale Conv Block
+        self.initial_conv = MultiScaleConv(in_channels, 64)
 
         # Feature Domain Denoising Part
-        self.denoising_blocks = nn.Sequential(*[ConvBlock(64) for _ in range(8)])
+        self.denoising_blocks = nn.Sequential(*[ConvBlock(64, 64) for _ in range(8)])
 
         # One Convolution Block
-        self.one_conv_block = ConvBlock(64)
+        self.one_conv_block = ConvBlock(64, 64)
 
         # Cooperative Attention
         self.cooperative_attention = CooperativeAttention(64)
@@ -124,14 +140,14 @@ class Generator(nn.Module):
         self.final_activation = nn.Tanh()
 
     def forward(self, x):
-        # Feature Extraction
-        feature_extraction_output = self.feature_extraction(x)
-        
+        # Initial Multi-Scale Conv Block
+        initial_conv_output = self.initial_conv(x)
+
         # Feature Domain Denoising
-        denoising_output = self.denoising_blocks(feature_extraction_output)
+        denoising_output = self.denoising_blocks(initial_conv_output)
         
-        # Subtract feature extraction result from denoising output
-        denoising_output = feature_extraction_output - denoising_output
+        # Subtract initial conv result from denoising output
+        denoising_output = initial_conv_output - denoising_output
         
         # One Convolution Block
         conv_block_output = self.one_conv_block(denoising_output)
@@ -159,40 +175,34 @@ class Generator(nn.Module):
 class Discriminator(nn.Module):
     def __init__(self, in_channels):
         super(Discriminator, self).__init__()
-        self.conv1 = nn.Conv2d(in_channels, 64, kernel_size=3, stride=1, padding=1)
-        self.conv2 = nn.Conv2d(64, 64, kernel_size=3, stride=2, padding=1)
-        self.conv3 = nn.Conv2d(64, 128, kernel_size=3, stride=1, padding=1)
-        self.conv4 = nn.Conv2d(128, 128, kernel_size=3, stride=2, padding=1)
-        self.conv5 = nn.Conv2d(128, 256, kernel_size=3, stride=1, padding=1)
-        self.conv6 = nn.Conv2d(256, 256, kernel_size=3, stride=2, padding=1)
-        
-        self.bn64 = nn.BatchNorm2d(64)
-        self.bn128 = nn.BatchNorm2d(128)
-        self.bn256 = nn.BatchNorm2d(256)
-        
-        self.lrelu = nn.LeakyReLU(0.2, inplace=True)
-        
-        # Adjust the input size of the fully connected layer based on the final feature map size
-        self.fc1 = nn.Linear(256 * 32 * 32, 1024)  # For 256x256 input images
-        self.fc2 = nn.Linear(1024, 1)
-    
+
+        # Convolutional layers
+        self.conv_layers = nn.Sequential(
+            ConvBlock(in_channels, 64, kernel_size=3, stride=1, padding=1),
+            ConvBlock(64, 64, kernel_size=3, stride=2, padding=1),
+            ConvBlock(64, 128, kernel_size=3, stride=1, padding=1),
+            ConvBlock(128, 128, kernel_size=3, stride=2, padding=1),
+            ConvBlock(128, 256, kernel_size=3, stride=1, padding=1),
+            ConvBlock(256, 256, kernel_size=3, stride=2, padding=1)
+        )
+
+        # Fully connected layers
+        self.fc_layers = nn.Sequential(
+            nn.Linear(256 * 32 * 32, 1024),
+            nn.ReLU(inplace=True),
+            nn.Linear(1024, 1)
+        )
+
     def forward(self, x):
-        x = self.lrelu(self.bn64(self.conv1(x)))
-        x = self.lrelu(self.bn64(self.conv2(x)))
-        x = self.lrelu(self.bn128(self.conv3(x)))
-        x = self.lrelu(self.bn128(self.conv4(x)))
-        x = self.lrelu(self.bn256(self.conv5(x)))
-        x = self.lrelu(self.bn256(self.conv6(x)))
-        
-        x = x.view(x.size(0), -1)  # flatten
-        x = self.lrelu(self.fc1(x))
-        x = self.fc2(x)
+        x = self.conv_layers(x)
+        x = x.view(x.size(0), -1)  # Flatten the tensor
+        x = self.fc_layers(x)
         return x
 
 class PerceptualLoss(nn.Module):
     def __init__(self, feature_layer=8):
         super(PerceptualLoss, self).__init__()
-        vgg = models.vgg19(pretrained=True).features
+        vgg = models.vgg19(weights=models.VGG19_Weights.IMAGENET1K_V1).features
         self.feature_extractor = nn.Sequential(*list(vgg.children())[:feature_layer]).eval()
         for param in self.feature_extractor.parameters():
             param.requires_grad = False
@@ -279,9 +289,45 @@ class MultimodalLoss(nn.Module):
 def denormalize(tensor):
     return tensor * 0.5 + 0.5
 
-# Training loop
-def train_rca_gan(train_loader, val_loader, num_epochs=200, lambda_pixel=100, lambda_perceptual=0.1, lambda_texture=1.0,
-                  lr=0.0001, betas=(0.5, 0.999), device=torch.device("cuda" if torch.cuda.is_available() else "mps")):
+def visualize_activation(name, writer, epoch):
+    def hook(model, input, output):
+        # Normalize the output for visualization
+        output = output - output.min()
+        output = output / output.max()
+        
+        # If the tensor has more than 3 channels, we can visualize the first 3 channels
+        # or take the mean across the channels.
+        if output.size(1) > 3:
+            output = output[:, :3, :, :]  # Take the first 3 channels
+        elif output.size(1) == 1:
+            output = output.repeat(1, 3, 1, 1)  # Convert single-channel to 3-channel
+        
+        grid = torchvision.utils.make_grid(output, normalize=True, scale_each=True)
+        writer.add_image(name, grid, epoch)
+    return hook
+
+def register_hooks(generator, writer, epoch):
+    hooks = {
+        "initial_conv": generator.initial_conv.register_forward_hook(visualize_activation("Initial Conv", writer, epoch))
+    }
+
+    for i, layer in enumerate(generator.denoising_blocks):
+        hooks[f"denoising_blocks_{i+1}"] = layer.register_forward_hook(visualize_activation(f"Denoising Block {i+1}", writer, epoch))
+    
+    hooks["one_conv_block"] = generator.one_conv_block.register_forward_hook(visualize_activation("One Conv Block", writer, epoch))
+    hooks["channel_attention"] = generator.cooperative_attention.channel_attention.register_forward_hook(visualize_activation("Channel Attention", writer, epoch))
+    hooks["spatial_attention"] = generator.cooperative_attention.spatial_attention.register_forward_hook(visualize_activation("Spatial Attention", writer, epoch))
+    
+    for i, layer in enumerate(generator.residual_blocks):
+        hooks[f"residual_blocks_{i+1}"] = layer.register_forward_hook(visualize_activation(f"Residual Block {i+1}", writer, epoch))
+    
+    for i, layer in enumerate(generator.deconv_blocks):
+        hooks[f"deconv_blocks_{i+1}"] = layer.register_forward_hook(visualize_activation(f"Deconv Block {i+1}", writer, epoch))
+    
+    return hooks
+
+def train_rca_gan(train_loader, val_loader, num_epochs=200, lambda_pixel=1, lambda_perceptual=0.01, lambda_texture=0.001,
+                  lr=0.00005, betas=(0.5, 0.999), device=torch.device("cuda" if torch.cuda.is_available() else "mps")):
     # Initialize the models
     in_channels = 1
     out_channels = 1
@@ -291,8 +337,21 @@ def train_rca_gan(train_loader, val_loader, num_epochs=200, lambda_pixel=100, la
 
     log_dir='runs/paper_gan'
 
-    # Initialize TensorBoard writer
+    # Initialize TensorBoard writers
     writer = SummaryWriter(log_dir=log_dir)
+    writer_debug = SummaryWriter(log_dir=f'{log_dir}/debug')
+
+    # Apply weights initialization
+    def weights_init_normal(m):
+        classname = m.__class__.__name__
+        if hasattr(m, 'weight') and 'Conv' in classname:
+            nn.init.normal_(m.weight.data, 0.0, 0.02)
+        elif hasattr(m, 'bias') and 'BatchNorm' in classname:
+            nn.init.normal_(m.weight.data, 1.0, 0.02)
+            nn.init.constant_(m.bias.data, 0)
+
+    generator.apply(weights_init_normal)
+    discriminator.apply(weights_init_normal)
 
     # Optimizers
     optimizer_G = optim.Adam(generator.parameters(), lr=lr, betas=betas)
@@ -303,6 +362,9 @@ def train_rca_gan(train_loader, val_loader, num_epochs=200, lambda_pixel=100, la
     scheduler_D = optim.lr_scheduler.StepLR(optimizer_D, step_size=10, gamma=0.5)
 
     global_step = 0
+
+    # Register hooks once
+    hooks = register_hooks(generator, writer_debug, epoch=0)
 
     for epoch in range(num_epochs):
         for i, (degraded_images, gt_images) in enumerate(train_loader):
@@ -346,8 +408,13 @@ def train_rca_gan(train_loader, val_loader, num_epochs=200, lambda_pixel=100, la
             # Log batch losses to TensorBoard
             writer.add_scalar('Loss/Discriminator', d_loss.item(), global_step)
             writer.add_scalar('Loss/Generator', g_loss.item(), global_step)
+            writer.add_scalar('Loss/Perceptual', multimodal_loss.perceptual_loss(gt_images, gen_clean).item(), global_step)
+            writer.add_scalar('Loss/Content', multimodal_loss.content_loss(gt_images, gen_clean).item(), global_step)
+            writer.add_scalar('Loss/Texture', multimodal_loss.texture_loss(gt_images, gen_clean).item(), global_step)
+            writer.add_scalar('Loss/Adversarial', multimodal_loss.adversarial_loss(gt_images, gen_clean).item(), global_step)
+
             global_step += 1
-            
+
         # Log example images to TensorBoard at the end of each epoch
         with torch.no_grad():
             example_degraded = degraded_images[:4].cpu()  # Take first 4 examples from the last batch
@@ -364,6 +431,15 @@ def train_rca_gan(train_loader, val_loader, num_epochs=200, lambda_pixel=100, la
             writer.add_images('Generated Images', example_gen, epoch)
             writer.add_images('Ground Truth Images', example_gt, epoch)
 
+        """    
+
+        # Manually trigger hooks to log activations at the end of the epoch
+        for name, layer in generator.named_modules():
+            if isinstance(layer, nn.Conv2d):
+                layer.register_forward_hook(visualize_activation(name, writer_debug, epoch))
+
+        """
+
         scheduler_G.step()
         scheduler_D.step()
 
@@ -373,4 +449,4 @@ def train_rca_gan(train_loader, val_loader, num_epochs=200, lambda_pixel=100, la
 
     print("Training finished.")
     writer.close()
-
+    writer_debug.close()
