@@ -307,22 +307,10 @@ def visualize_activation(name, writer, epoch):
     return hook
 
 def register_hooks(generator, writer, epoch):
-    hooks = {
-        "initial_conv": generator.initial_conv.register_forward_hook(visualize_activation("Initial Conv", writer, epoch))
-    }
-
-    for i, layer in enumerate(generator.denoising_blocks):
-        hooks[f"denoising_blocks_{i+1}"] = layer.register_forward_hook(visualize_activation(f"Denoising Block {i+1}", writer, epoch))
+    hooks = {}
     
-    hooks["one_conv_block"] = generator.one_conv_block.register_forward_hook(visualize_activation("One Conv Block", writer, epoch))
-    hooks["channel_attention"] = generator.cooperative_attention.channel_attention.register_forward_hook(visualize_activation("Channel Attention", writer, epoch))
-    hooks["spatial_attention"] = generator.cooperative_attention.spatial_attention.register_forward_hook(visualize_activation("Spatial Attention", writer, epoch))
-    
-    for i, layer in enumerate(generator.residual_blocks):
-        hooks[f"residual_blocks_{i+1}"] = layer.register_forward_hook(visualize_activation(f"Residual Block {i+1}", writer, epoch))
-    
-    for i, layer in enumerate(generator.deconv_blocks):
-        hooks[f"deconv_blocks_{i+1}"] = layer.register_forward_hook(visualize_activation(f"Deconv Block {i+1}", writer, epoch))
+    # Register hook for the last deconv block only
+    hooks["deconv_blocks_last"] = generator.deconv_blocks[-1].register_forward_hook(visualize_activation("Deconv Block Last", writer, epoch))
     
     return hooks
 
@@ -430,15 +418,6 @@ def train_rca_gan(train_loader, val_loader, num_epochs=200, lambda_pixel=1, lamb
             writer.add_images('Degraded Images', example_degraded, epoch)
             writer.add_images('Generated Images', example_gen, epoch)
             writer.add_images('Ground Truth Images', example_gt, epoch)
-
-        """    
-
-        # Manually trigger hooks to log activations at the end of the epoch
-        for name, layer in generator.named_modules():
-            if isinstance(layer, nn.Conv2d):
-                layer.register_forward_hook(visualize_activation(name, writer_debug, epoch))
-
-        """
 
         scheduler_G.step()
         scheduler_D.step()
