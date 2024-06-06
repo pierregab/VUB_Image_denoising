@@ -3,7 +3,7 @@ import torch
 from torchvision import transforms
 from torch.utils.data import DataLoader, random_split
 import matplotlib.pyplot as plt
-from custom_dataset import CustomDataset  # Ensure custom_dataset.py is in the same directory or in your PYTHONPATH
+from dataset_creation.custom_dataset import CustomDataset  # Ensure custom_dataset.py is in the same directory or in your PYTHONPATH
 
 def load_data(gt_folder, degraded_folder, batch_size=4, num_workers=4, validation_split=0.2, augment=False, dataset_percentage=1.0):
     """

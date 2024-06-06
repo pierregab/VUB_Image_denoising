@@ -1,7 +1,7 @@
 import torch
 import optuna
 import subprocess
-from data_loader import load_data
+from VUB_Image_denoising.dataset_creation.data_loader import load_data
 from train_denoising_gan_hyperparameters import train_denoising_gan
 
 # Define paths to ground truth and degraded images

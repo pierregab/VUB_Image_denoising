@@ -1,7 +1,15 @@
 import torch
 import subprocess
-from data_loader import load_data
+import sys
+import os
+
+# Assuming your script is in RCA_GAN and the project root is one level up
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+sys.path.append(project_root)
+
+from dataset_creation.data_loader import load_data
 from paper_gan import train_rca_gan
+
 
 # Define paths to ground truth and degraded images
 gt_folder = 'DIV2K_train_HR.nosync/resized_ground_truth_images'
@@ -20,7 +28,7 @@ def main():
 
     # Use num_workers=0 to avoid multiprocessing issues for debugging
     train_loader, val_loader = load_data(gt_folder, degraded_folder, batch_size=1, num_workers=8, 
-                                         validation_split=0.2, augment=True, dataset_percentage=1)
+                                         validation_split=0.2, augment=True, dataset_percentage=0.025)
 
     # Train the model with the current hyperparameters
     train_rca_gan(
