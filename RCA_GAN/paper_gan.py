@@ -330,16 +330,16 @@ def train_rca_gan(train_loader, val_loader, num_epochs=200, lambda_pixel=1, lamb
     writer_debug = SummaryWriter(log_dir=f'{log_dir}/debug')
 
     # Apply weights initialization
-    def weights_init(m):
+    def weights_init_normal(m):
         classname = m.__class__.__name__
-        if hasattr(m, 'weight') and ('Conv' in classname or 'Linear' in classname):
-            nn.init.kaiming_normal_(m.weight.data, a=0, mode='fan_in', nonlinearity='leaky_relu')
-        elif 'BatchNorm' in classname:
-            nn.init.constant_(m.weight.data, 1.0)
-            nn.init.constant_(m.bias.data, 0.0)
+        if hasattr(m, 'weight') and 'Conv' in classname:
+            nn.init.normal_(m.weight.data, 0.0, 0.02)
+        elif hasattr(m, 'bias') and 'BatchNorm' in classname:
+            nn.init.normal_(m.weight.data, 1.0, 0.02)
+            nn.init.constant_(m.bias.data, 0)
 
-    generator.apply(weights_init)
-    discriminator.apply(weights_init)
+    generator.apply(weights_init_normal)
+    discriminator.apply(weights_init_normal)
 
     # Optimizers
     optimizer_G = optim.Adam(generator.parameters(), lr=lr, betas=betas)
@@ -355,8 +355,6 @@ def train_rca_gan(train_loader, val_loader, num_epochs=200, lambda_pixel=1, lamb
     hooks = register_hooks(generator, writer_debug, epoch=0)
 
     for epoch in range(num_epochs):
-        generator.train()
-        discriminator.train()
         for i, (degraded_images, gt_images) in enumerate(train_loader):
             degraded_images = degraded_images.to(device)
             gt_images = gt_images.to(device)
@@ -383,9 +381,6 @@ def train_rca_gan(train_loader, val_loader, num_epochs=200, lambda_pixel=1, lamb
             d_loss.backward()
             optimizer_D.step()
 
-            # Gradient clipping for the discriminator
-            torch.nn.utils.clip_grad_norm_(discriminator.parameters(), max_norm=1.0)
-
             # Train Generator
             optimizer_G.zero_grad()
             fake_output = discriminator(gen_clean)
@@ -393,9 +388,6 @@ def train_rca_gan(train_loader, val_loader, num_epochs=200, lambda_pixel=1, lamb
             g_loss = multimodal_loss(gen_clean, gt_images, degraded_images)
             g_loss.backward()
             optimizer_G.step()
-
-            # Gradient clipping for the generator
-            torch.nn.utils.clip_grad_norm_(generator.parameters(), max_norm=1.0)
 
             # Print training progress
             if i % 10 == 0:
@@ -410,19 +402,6 @@ def train_rca_gan(train_loader, val_loader, num_epochs=200, lambda_pixel=1, lamb
             writer.add_scalar('Loss/Adversarial', multimodal_loss.adversarial_loss(gt_images, gen_clean).item(), global_step)
 
             global_step += 1
-
-        # Validation step
-        generator.eval()
-        val_loss = 0
-        with torch.no_grad():
-            for degraded_images, gt_images in val_loader:
-                degraded_images, gt_images = degraded_images.to(device), gt_images.to(device)
-                gen_clean = generator(degraded_images)
-                loss = multimodal_loss(gen_clean, gt_images, degraded_images)
-                val_loss += loss.item()
-
-        val_loss /= len(val_loader)
-        writer.add_scalar('Loss/Validation', val_loss, epoch)
 
         # Log example images to TensorBoard at the end of each epoch
         with torch.no_grad():
@@ -444,13 +423,8 @@ def train_rca_gan(train_loader, val_loader, num_epochs=200, lambda_pixel=1, lamb
         scheduler_D.step()
 
         if (epoch + 1) % 10 == 0:
-            torch.save({
-                'epoch': epoch,
-                'generator_state_dict': generator.state_dict(),
-                'discriminator_state_dict': discriminator.state_dict(),
-                'optimizer_G_state_dict': optimizer_G.state_dict(),
-                'optimizer_D_state_dict': optimizer_D.state_dict(),
-            }, f"checkpoint_epoch_{epoch+1}.pth")
+            torch.save(generator.state_dict(), f"generator_epoch_{epoch+1}.pth")
+            torch.save(discriminator.state_dict(), f"discriminator_epoch_{epoch+1}.pth")
 
     print("Training finished.")
     writer.close()
