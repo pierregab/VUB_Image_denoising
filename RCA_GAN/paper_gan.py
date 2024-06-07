@@ -62,19 +62,19 @@ class ResidualBlock(nn.Module):
         super(ResidualBlock, self).__init__()
         self.conv1 = nn.Conv2d(in_channels, in_channels, kernel_size=3, padding=1)
         self.bn1 = nn.BatchNorm2d(in_channels)
-        self.relu = nn.ReLU(inplace=True)
-        self.bn2 = nn.BatchNorm2d(in_channels)
+        self.lrelu = nn.LeakyReLU(negative_slope=0.1, inplace=True)
         self.conv2 = nn.Conv2d(in_channels, in_channels, kernel_size=3, padding=1)
+        self.bn2 = nn.BatchNorm2d(in_channels)
     
     def forward(self, x):
         identity = x
         out = self.conv1(x)
         out = self.bn1(out)
-        out = self.relu(out)
-        out = self.bn2(out)
+        out = self.lrelu(out)
         out = self.conv2(out)
+        out = self.bn2(out)
         out += identity
-        out = self.relu(out)
+        out = self.lrelu(out)
         return out
 
 class DeconvBlock(nn.Module):
@@ -111,11 +111,12 @@ class MultiScaleConv(nn.Module):
         concatenated = torch.cat([out1x1, out3x3, out5x5, out7x7], dim=1)
         return self.bn_final(self.final_conv(concatenated))
 
+
 class Generator(nn.Module):
     def __init__(self, in_channels, out_channels):
         super(Generator, self).__init__()
 
-        # Initial Multi-Scale Conv Block
+        # Initial Conv Block
         self.initial_conv = MultiScaleConv(in_channels, 64)
 
         # Feature Domain Denoising Part
@@ -131,46 +132,60 @@ class Generator(nn.Module):
         self.residual_blocks = nn.Sequential(*[ResidualBlock(64) for _ in range(9)])
 
         # Deconvolution Blocks
-        deconv_blocks = [DeconvBlock(64, 64, kernel_size=3) for _ in range(4)]
-        # Custom DeconvBlock for the final layer with different out_channels
-        final_deconv_block = DeconvBlock(64, out_channels, kernel_size=1, stride=1, padding=0)
-        self.deconv_blocks = nn.Sequential(*deconv_blocks, final_deconv_block)
+        self.deconv_blocks = nn.Sequential(
+            DeconvBlock(64, 64, kernel_size=3, stride=1, padding=1),
+            DeconvBlock(64, 64, kernel_size=3, stride=1, padding=1),
+            DeconvBlock(64, 64, kernel_size=3, stride=1, padding=1),
+            DeconvBlock(64, 64, kernel_size=3, stride=1, padding=1),
+            DeconvBlock(64, out_channels, kernel_size=1, stride=1, padding=0)
+        )
 
         # Final tanh activation for output
         self.final_activation = nn.Tanh()
 
     def forward(self, x):
-        # Initial Multi-Scale Conv Block
+        intermediate_outputs = {}
+        
+        # Initial Conv Block
         initial_conv_output = self.initial_conv(x)
-
+        intermediate_outputs['initial_conv_output'] = initial_conv_output
+        
         # Feature Domain Denoising
         denoising_output = self.denoising_blocks(initial_conv_output)
+        intermediate_outputs['denoising_output'] = denoising_output
         
         # Subtract initial conv result from denoising output
-        denoising_output = initial_conv_output - denoising_output
-        
+        denoising_output = denoising_output - initial_conv_output
+
         # One Convolution Block
-        conv_block_output = self.one_conv_block(denoising_output)
+        one_conv_output = self.one_conv_block(denoising_output)
+        intermediate_outputs['one_conv_output'] = one_conv_output
         
         # Cooperative Attention
-        attention_output = self.cooperative_attention(conv_block_output)
+        attention_output = self.cooperative_attention(one_conv_output)
+        intermediate_outputs['attention_output'] = attention_output
         
         # Residual Blocks
         residual_output = self.residual_blocks(attention_output)
+        intermediate_outputs['residual_output'] = residual_output
         
-        # Add residual output to conv_block_output
-        combined_output = residual_output + conv_block_output
+        # Add residual output to attention_output
+        combined_output = residual_output + attention_output
+        intermediate_outputs['combined_output'] = combined_output
         
         # Deconvolution Blocks
         deconv_output = self.deconv_blocks(combined_output)
+        intermediate_outputs['deconv_output'] = deconv_output
         
         # Add global cross-layer connection from input to the final output
         final_output = deconv_output + x
+        intermediate_outputs['final_output'] = final_output
         
         # Apply final tanh activation to map to pixel value range
         output = self.final_activation(final_output)
+        intermediate_outputs['output'] = output
         
-        return output
+        return output, intermediate_outputs
 
 class Discriminator(nn.Module):
     def __init__(self, in_channels):
@@ -295,8 +310,7 @@ def visualize_activation(name, writer, epoch):
         output = output - output.min()
         output = output / output.max()
         
-        # If the tensor has more than 3 channels, we can visualize the first 3 channels
-        # or take the mean across the channels.
+        # Ensure the output has 1 or 3 channels
         if output.size(1) > 3:
             output = output[:, :3, :, :]  # Take the first 3 channels
         elif output.size(1) == 1:
@@ -311,6 +325,7 @@ def register_hooks(generator, writer, epoch):
     
     # Register hook for the last deconv block only
     hooks["deconv_blocks_last"] = generator.deconv_blocks[-1].register_forward_hook(visualize_activation("Deconv Block Last", writer, epoch))
+    hooks["initial_conv"] = generator.initial_conv.register_forward_hook(visualize_activation("Initial Conv Output", writer, epoch))
     
     return hooks
 
@@ -351,9 +366,6 @@ def train_rca_gan(train_loader, val_loader, num_epochs=200, lambda_pixel=1, lamb
 
     global_step = 0
 
-    # Register hooks once
-    hooks = register_hooks(generator, writer_debug, epoch=0)
-
     for epoch in range(num_epochs):
         for i, (degraded_images, gt_images) in enumerate(train_loader):
             degraded_images = degraded_images.to(device)
@@ -363,7 +375,7 @@ def train_rca_gan(train_loader, val_loader, num_epochs=200, lambda_pixel=1, lamb
             optimizer_D.zero_grad()
             
             # Generate clean images
-            gen_clean = generator(degraded_images)
+            gen_clean, intermediate_outputs = generator(degraded_images)
             
             # Prepare real and fake data for discriminator
             real_data = gt_images
@@ -403,11 +415,12 @@ def train_rca_gan(train_loader, val_loader, num_epochs=200, lambda_pixel=1, lamb
 
             global_step += 1
 
-        # Log example images to TensorBoard at the end of each epoch
+        # Log example images and intermediate outputs to TensorBoard at the end of each epoch
         with torch.no_grad():
             example_degraded = degraded_images[:4].cpu()  # Take first 4 examples from the last batch
             example_gt = gt_images[:4].cpu()
-            example_gen = generator(example_degraded.to(device)).cpu()
+            example_gen, intermediate_outputs = generator(example_degraded.to(device))
+            example_gen = example_gen.cpu()
             
             # Denormalize images to [0, 1] for better visualization
             example_degraded = denormalize(example_degraded)
@@ -418,6 +431,16 @@ def train_rca_gan(train_loader, val_loader, num_epochs=200, lambda_pixel=1, lamb
             writer.add_images('Degraded Images', example_degraded, epoch)
             writer.add_images('Generated Images', example_gen, epoch)
             writer.add_images('Ground Truth Images', example_gt, epoch)
+            
+            # Log intermediate outputs
+            for name, output in intermediate_outputs.items():
+                output = output[:4].cpu()  # Take first 4 examples
+                output = denormalize(output)
+                if output.size(1) == 1:  # Convert single-channel to 3-channel
+                    output = output.repeat(1, 3, 1, 1)
+                elif output.size(1) > 3:  # If more than 3 channels, take only the first 3 channels
+                    output = output[:, :3, :, :]
+                writer_debug.add_images(name, output, epoch)
 
         scheduler_G.step()
         scheduler_D.step()
