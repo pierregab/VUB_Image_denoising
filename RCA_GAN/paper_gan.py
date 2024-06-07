@@ -131,13 +131,13 @@ class Generator(nn.Module):
         # Residual Blocks
         self.residual_blocks = nn.Sequential(*[ResidualBlock(64) for _ in range(9)])
 
-        # Deconvolution Blocks
+        # Deconvolution Blocks with varying kernel sizes
         self.deconv_blocks = nn.Sequential(
-            DeconvBlock(64, 64, kernel_size=3, stride=1, padding=1),
-            DeconvBlock(64, 64, kernel_size=3, stride=1, padding=1),
-            DeconvBlock(64, 64, kernel_size=3, stride=1, padding=1),
-            DeconvBlock(64, 64, kernel_size=3, stride=1, padding=1),
-            DeconvBlock(64, out_channels, kernel_size=1, stride=1, padding=0)
+            DeconvBlock(64, 64, kernel_size=3, stride=1, padding=1),  # kernel size 3x3
+            DeconvBlock(64, 64, kernel_size=5, stride=1, padding=2),  # kernel size 5x5
+            DeconvBlock(64, 64, kernel_size=7, stride=1, padding=3),  # kernel size 7x7
+            DeconvBlock(64, 64, kernel_size=9, stride=1, padding=4),  # kernel size 9x9
+            DeconvBlock(64, out_channels, kernel_size=1, stride=1, padding=0)  # kernel size 1x1
         )
 
         # Final tanh activation for output
@@ -329,8 +329,29 @@ def register_hooks(generator, writer, epoch):
     
     return hooks
 
-def train_rca_gan(train_loader, val_loader, num_epochs=200, lambda_pixel=1, lambda_perceptual=0.01, lambda_texture=0.001,
-                  lr=0.00005, betas=(0.5, 0.999), device=torch.device("cuda" if torch.cuda.is_available() else "mps")):
+def weights_init(m, init_type='normal'):
+    classname = m.__class__.__name__
+    if hasattr(m, 'weight') and 'Conv' in classname:
+        if init_type == 'normal':
+            nn.init.normal_(m.weight.data, 0.0, 0.02)
+        elif init_type == 'xavier':
+            nn.init.xavier_normal_(m.weight.data, gain=nn.init.calculate_gain('leaky_relu'))
+        elif init_type == 'kaiming':
+            nn.init.kaiming_normal_(m.weight.data, mode='fan_out', nonlinearity='leaky_relu')
+    elif hasattr(m, 'bias') and 'BatchNorm' in classname:
+        nn.init.normal_(m.weight.data, 1.0, 0.02)
+        nn.init.constant_(m.bias.data, 0)
+
+# Ensure residual blocks are also properly initialized
+def initialize_weights(module):
+    if isinstance(module, nn.Conv2d) or isinstance(module, nn.ConvTranspose2d):
+        nn.init.kaiming_normal_(module.weight, mode='fan_out', nonlinearity='leaky_relu')
+    elif isinstance(module, nn.BatchNorm2d):
+        nn.init.constant_(module.weight, 1)
+        nn.init.constant_(module.bias, 0)
+
+def train_rca_gan(train_loader, val_loader, num_epochs=1, lambda_pixel=1, lambda_perceptual=0.01, lambda_texture=0.001,
+                  lr=0.00005, betas=(0.5, 0.999), init_type='normal', log_dir='runs/paper_gan', use_tensorboard=True, device=torch.device("cuda" if torch.cuda.is_available() else "mps")):
     # Initialize the models
     in_channels = 1
     out_channels = 1
@@ -338,23 +359,13 @@ def train_rca_gan(train_loader, val_loader, num_epochs=200, lambda_pixel=1, lamb
     discriminator = Discriminator(in_channels).to(device)
     multimodal_loss = MultimodalLoss(discriminator, lambda_pixel, lambda_perceptual, lambda_texture, 1).to(device)
 
-    log_dir='runs/paper_gan'
+    if use_tensorboard:
+        # Initialize TensorBoard writers
+        writer = SummaryWriter(log_dir=log_dir)
+        writer_debug = SummaryWriter(log_dir=f'{log_dir}/debug')
 
-    # Initialize TensorBoard writers
-    writer = SummaryWriter(log_dir=log_dir)
-    writer_debug = SummaryWriter(log_dir=f'{log_dir}/debug')
-
-    # Apply weights initialization
-    def weights_init_normal(m):
-        classname = m.__class__.__name__
-        if hasattr(m, 'weight') and 'Conv' in classname:
-            nn.init.normal_(m.weight.data, 0.0, 0.02)
-        elif hasattr(m, 'bias') and 'BatchNorm' in classname:
-            nn.init.normal_(m.weight.data, 1.0, 0.02)
-            nn.init.constant_(m.bias.data, 0)
-
-    generator.apply(weights_init_normal)
-    discriminator.apply(weights_init_normal)
+    generator.apply(initialize_weights)
+    discriminator.apply(initialize_weights)
 
     # Optimizers
     optimizer_G = optim.Adam(generator.parameters(), lr=lr, betas=betas)
@@ -405,50 +416,56 @@ def train_rca_gan(train_loader, val_loader, num_epochs=200, lambda_pixel=1, lamb
             if i % 10 == 0:
                 print(f"[Epoch {epoch}/{num_epochs}] [Batch {i}/{len(train_loader)}] [D loss: {d_loss.item()}] [G loss: {g_loss.item()}]")
 
-            # Log batch losses to TensorBoard
-            writer.add_scalar('Loss/Discriminator', d_loss.item(), global_step)
-            writer.add_scalar('Loss/Generator', g_loss.item(), global_step)
-            writer.add_scalar('Loss/Perceptual', multimodal_loss.perceptual_loss(gt_images, gen_clean).item(), global_step)
-            writer.add_scalar('Loss/Content', multimodal_loss.content_loss(gt_images, gen_clean).item(), global_step)
-            writer.add_scalar('Loss/Texture', multimodal_loss.texture_loss(gt_images, gen_clean).item(), global_step)
-            writer.add_scalar('Loss/Adversarial', multimodal_loss.adversarial_loss(gt_images, gen_clean).item(), global_step)
+            if use_tensorboard:
+                # Log batch losses to TensorBoard
+                writer.add_scalar('Loss/Discriminator', d_loss.item(), global_step)
+                writer.add_scalar('Loss/Generator', g_loss.item(), global_step)
+                writer.add_scalar('Loss/Perceptual', multimodal_loss.perceptual_loss(gt_images, gen_clean).item(), global_step)
+                writer.add_scalar('Loss/Content', multimodal_loss.content_loss(gt_images, gen_clean).item(), global_step)
+                writer.add_scalar('Loss/Texture', multimodal_loss.texture_loss(gt_images, gen_clean).item(), global_step)
+                writer.add_scalar('Loss/Adversarial', multimodal_loss.adversarial_loss(gt_images, gen_clean).item(), global_step)
 
             global_step += 1
 
-        # Log example images and intermediate outputs to TensorBoard at the end of each epoch
-        with torch.no_grad():
-            example_degraded = degraded_images[:4].cpu()  # Take first 4 examples from the last batch
-            example_gt = gt_images[:4].cpu()
-            example_gen, intermediate_outputs = generator(example_degraded.to(device))
-            example_gen = example_gen.cpu()
-            
-            # Denormalize images to [0, 1] for better visualization
-            example_degraded = denormalize(example_degraded)
-            example_gt = denormalize(example_gt)
-            example_gen = denormalize(example_gen)
+        if use_tensorboard:
+            # Log example images and intermediate outputs to TensorBoard at the end of each epoch
+            with torch.no_grad():
+                example_degraded = degraded_images[:4].cpu()  # Take first 4 examples from the last batch
+                example_gt = gt_images[:4].cpu()
+                example_gen, intermediate_outputs = generator(example_degraded.to(device))
+                example_gen = example_gen.cpu()
+                
+                # Denormalize images to [0, 1] for better visualization
+                example_degraded = denormalize(example_degraded)
+                example_gt = denormalize(example_gt)
+                example_gen = denormalize(example_gen)
 
-            # Log images
-            writer.add_images('Degraded Images', example_degraded, epoch)
-            writer.add_images('Generated Images', example_gen, epoch)
-            writer.add_images('Ground Truth Images', example_gt, epoch)
-            
-            # Log intermediate outputs
-            for name, output in intermediate_outputs.items():
-                output = output[:4].cpu()  # Take first 4 examples
-                output = denormalize(output)
-                if output.size(1) == 1:  # Convert single-channel to 3-channel
-                    output = output.repeat(1, 3, 1, 1)
-                elif output.size(1) > 3:  # If more than 3 channels, take only the first 3 channels
-                    output = output[:, :3, :, :]
-                writer_debug.add_images(name, output, epoch)
+                # Log images
+                writer.add_images('Degraded Images', example_degraded, epoch)
+                writer.add_images('Generated Images', example_gen, epoch)
+                writer.add_images('Ground Truth Images', example_gt, epoch)
+                
+                # Log intermediate outputs
+                for name, output in intermediate_outputs.items():
+                    output = output[:4].cpu()  # Take first 4 examples
+                    output = denormalize(output)
+                    if output.size(1) == 1:  # Convert single-channel to 3-channel
+                        output = output.repeat(1, 3, 1, 1)
+                    elif output.size(1) > 3:  # If more than 3 channels, take only the first 3 channels
+                        output = output[:, :3, :, :]
+                    writer_debug.add_images(name, output, epoch)
 
         scheduler_G.step()
         scheduler_D.step()
 
         if (epoch + 1) % 10 == 0:
-            torch.save(generator.state_dict(), f"generator_epoch_{epoch+1}.pth")
-            torch.save(discriminator.state_dict(), f"discriminator_epoch_{epoch+1}.pth")
+            torch.save(generator.state_dict(), f"{log_dir}/generator_epoch_{epoch+1}.pth")
+            torch.save(discriminator.state_dict(), f"{log_dir}/discriminator_epoch_{epoch+1}.pth")
 
     print("Training finished.")
-    writer.close()
-    writer_debug.close()
+    
+    if use_tensorboard:
+        writer.close()
+        writer_debug.close()
+        
+    return generator, discriminator
