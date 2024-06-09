@@ -360,8 +360,11 @@ def initialize_weights(module):
     elif isinstance(module, ResidualBlock):
         module.initialize_weights()
 
-def train_rca_gan(train_loader, val_loader, num_epochs=1, lambda_perceptual=1.0, lambda_content=0.01, lambda_texture=0.001, lambda_adversarial=1.0,
-                  lr=0.0005, betas=(0.5, 0.999), init_type='normal', log_dir='runs/paper_gan', use_tensorboard=True, device=torch.device("cuda" if torch.cuda.is_available() else "mps")):
+def train_rca_gan(train_loader, val_loader, num_epochs=1,
+                    lambda_perceptual=1.0, lambda_content=0.01, lambda_texture=0.001, lambda_adversarial=1.0,
+                    lr=0.0005, betas=(0.5, 0.999), init_type='normal', log_dir='runs/paper_gan', use_tensorboard=True,
+                    debug=False, device=torch.device("cuda" if torch.cuda.is_available() else "mps")):
+    
     # Initialize the models
     in_channels = 1
     out_channels = 1
@@ -372,7 +375,7 @@ def train_rca_gan(train_loader, val_loader, num_epochs=1, lambda_perceptual=1.0,
     if use_tensorboard:
         # Initialize TensorBoard writers
         writer = SummaryWriter(log_dir=log_dir)
-        writer_debug = SummaryWriter(log_dir=f'{log_dir}/debug')
+        writer_debug = SummaryWriter(log_dir=f'{log_dir}/debug') if debug else None
 
     generator.apply(initialize_weights)
     discriminator.apply(initialize_weights)
@@ -400,7 +403,7 @@ def train_rca_gan(train_loader, val_loader, num_epochs=1, lambda_perceptual=1.0,
             
             # Prepare real and fake data for discriminator
             real_data = gt_images
-            fake_data = gen_clean.detach()
+            fake_data = gen_clean.detach()  # Detach the generated images
             
             # Calculate discriminator loss
             d_loss = multimodal_loss.adversarial_loss.discriminator_loss(real_data, fake_data)
@@ -430,8 +433,23 @@ def train_rca_gan(train_loader, val_loader, num_epochs=1, lambda_perceptual=1.0,
 
             global_step += 1
 
+        # Validation step
+        val_loss = 0.0
+        with torch.no_grad():
+            for degraded_images, gt_images in val_loader:
+                degraded_images = degraded_images.to(device)
+                gt_images = gt_images.to(device)
+                
+                gen_clean, _ = generator(degraded_images)
+                val_loss += multimodal_loss(gen_clean, gt_images, degraded_images).item()
+        
+        val_loss /= len(val_loader)
+        
         if use_tensorboard:
-            # Log example images and intermediate outputs to TensorBoard at the end of each epoch
+            writer.add_scalar('Loss/Validation', val_loss, epoch)
+
+        # Log example images and intermediate outputs to TensorBoard at the end of each epoch
+        if use_tensorboard:
             with torch.no_grad():
                 example_degraded = degraded_images[:4].cpu()  # Take first 4 examples from the last batch
                 example_gt = gt_images[:4].cpu()
@@ -448,15 +466,16 @@ def train_rca_gan(train_loader, val_loader, num_epochs=1, lambda_perceptual=1.0,
                 writer.add_images('Generated Images', example_gen, epoch)
                 writer.add_images('Ground Truth Images', example_gt, epoch)
                 
-                # Log intermediate outputs
-                for name, output in intermediate_outputs.items():
-                    output = output[:4].cpu()  # Take first 4 examples
-                    output = denormalize(output)
-                    if output.size(1) == 1:  # Convert single-channel to 3-channel
-                        output = output.repeat(1, 3, 1, 1)
-                    elif output.size(1) > 3:  # If more than 3 channels, take only the first 3 channels
-                        output = output[:, :3, :, :]
-                    writer_debug.add_images(name, output, epoch)
+                if debug:
+                    # Log intermediate outputs
+                    for name, output in intermediate_outputs.items():
+                        output = output[:4].cpu()  # Take first 4 examples
+                        output = denormalize(output)
+                        if output.size(1) == 1:  # Convert single-channel to 3-channel
+                            output = output.repeat(1, 3, 1, 1)
+                        elif output.size(1) > 3:  # If more than 3 channels, take only the first 3 channels
+                            output = output[:, :3, :, :]
+                        writer_debug.add_images(name, output, epoch)
 
         scheduler_G.step()
         scheduler_D.step()
@@ -469,6 +488,7 @@ def train_rca_gan(train_loader, val_loader, num_epochs=1, lambda_perceptual=1.0,
     
     if use_tensorboard:
         writer.close()
-        writer_debug.close()
+        if debug:
+            writer_debug.close()
         
     return generator, discriminator
