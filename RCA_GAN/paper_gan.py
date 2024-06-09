@@ -11,7 +11,7 @@ class ChannelAttention(nn.Module):
         super(ChannelAttention, self).__init__()
         self.bn = nn.BatchNorm2d(in_channels)
         self.gamma = nn.Parameter(torch.zeros(1))  # Initialize to zeros
-        self.beta = nn.Parameter(torch.zeros(1))  # Initialize to zeros
+        self.beta = nn.Parameter(torch.ones(1))  # Initialize to zeros
         self.sigmoid = nn.Sigmoid()
 
     def forward(self, x):
@@ -52,7 +52,7 @@ class ConvBlock(nn.Module):
         super(ConvBlock, self).__init__()
         self.conv = nn.Conv2d(in_channels, out_channels, kernel_size=kernel_size, stride=stride, padding=padding)
         self.bn = nn.BatchNorm2d(out_channels)
-        self.lrelu = nn.LeakyReLU(0.2, inplace=True)
+        self.lrelu = nn.LeakyReLU(0.01, inplace=True)
     
     def forward(self, x):
         return self.lrelu(self.bn(self.conv(x)))
@@ -62,10 +62,14 @@ class ResidualBlock(nn.Module):
         super(ResidualBlock, self).__init__()
         self.conv1 = nn.Conv2d(in_channels, in_channels, kernel_size=3, padding=1)
         self.bn1 = nn.BatchNorm2d(in_channels)
-        self.lrelu = nn.LeakyReLU(negative_slope=0.1, inplace=True)
+        self.lrelu = nn.LeakyReLU(negative_slope=0.01, inplace=True)
         self.conv2 = nn.Conv2d(in_channels, in_channels, kernel_size=3, padding=1)
         self.bn2 = nn.BatchNorm2d(in_channels)
-    
+        self.output_norm = nn.BatchNorm2d(in_channels)  # Add a BatchNorm layer for normalization
+
+        # Initialize weights and biases
+        self.initialize_weights()
+
     def forward(self, x):
         identity = x
         out = self.conv1(x)
@@ -75,14 +79,21 @@ class ResidualBlock(nn.Module):
         out = self.bn2(out)
         out += identity
         out = self.lrelu(out)
+        #out = self.output_norm(out)  # Normalize the output
         return out
+
+    def initialize_weights(self):
+        nn.init.normal_(self.conv1.weight, mean=0.0, std=0.001)
+        nn.init.constant_(self.conv1.bias, 0)
+        nn.init.normal_(self.conv2.weight, mean=0.0, std=0.001)
+        nn.init.constant_(self.conv2.bias, 0)
 
 class DeconvBlock(nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size=3, stride=1, padding=1):
         super(DeconvBlock, self).__init__()
         self.conv = nn.ConvTranspose2d(in_channels, out_channels, kernel_size=kernel_size, stride=stride, padding=padding)
         self.bn = nn.BatchNorm2d(out_channels)
-        self.lrelu = nn.LeakyReLU(0.2, inplace=True)
+        self.lrelu = nn.LeakyReLU(0.01, inplace=True)
     
     def forward(self, x):
         return self.lrelu(self.bn(self.conv(x)))
@@ -110,8 +121,7 @@ class MultiScaleConv(nn.Module):
         out7x7 = self.bn7x7(self.conv7x7(x))
         concatenated = torch.cat([out1x1, out3x3, out5x5, out7x7], dim=1)
         return self.bn_final(self.final_conv(concatenated))
-
-
+    
 class Generator(nn.Module):
     def __init__(self, in_channels, out_channels):
         super(Generator, self).__init__()
@@ -131,13 +141,13 @@ class Generator(nn.Module):
         # Residual Blocks
         self.residual_blocks = nn.Sequential(*[ResidualBlock(64) for _ in range(9)])
 
-        # Deconvolution Blocks with varying kernel sizes
-        self.deconv_blocks = nn.Sequential(
-            DeconvBlock(64, 64, kernel_size=3, stride=1, padding=1),  # kernel size 3x3
-            DeconvBlock(64, 64, kernel_size=5, stride=1, padding=2),  # kernel size 5x5
-            DeconvBlock(64, 64, kernel_size=7, stride=1, padding=3),  # kernel size 7x7
-            DeconvBlock(64, 64, kernel_size=9, stride=1, padding=4),  # kernel size 9x9
-            DeconvBlock(64, out_channels, kernel_size=1, stride=1, padding=0)  # kernel size 1x1
+        # Convolution Blocks leading to a single-channel output
+        self.conv_blocks = nn.Sequential(
+            ConvBlock(64, 32, kernel_size=3, stride=1, padding=1),  # reduce to 32 channels, kernel size 3
+            ConvBlock(32, 16, kernel_size=5, stride=1, padding=2),  # reduce to 16 channels, kernel size 5
+            ConvBlock(16, 8, kernel_size=7, stride=1, padding=3),   # reduce to 8 channels, kernel size 7
+            ConvBlock(8, 4, kernel_size=5, stride=1, padding=2),    # reduce to 4 channels, kernel size 5
+            ConvBlock(4, out_channels, kernel_size=1, stride=1, padding=0),  # finally reduce to out_channels, kernel size 1
         )
 
         # Final tanh activation for output
@@ -145,46 +155,55 @@ class Generator(nn.Module):
 
     def forward(self, x):
         intermediate_outputs = {}
-        
+
         # Initial Conv Block
         initial_conv_output = self.initial_conv(x)
+        #print(f'initial_conv_output: {initial_conv_output.shape}')
         intermediate_outputs['initial_conv_output'] = initial_conv_output
-        
+
         # Feature Domain Denoising
         denoising_output = self.denoising_blocks(initial_conv_output)
+        #print(f'denoising_output: {denoising_output.shape}')
         intermediate_outputs['denoising_output'] = denoising_output
-        
+
         # Subtract initial conv result from denoising output
         denoising_output = denoising_output - initial_conv_output
 
         # One Convolution Block
         one_conv_output = self.one_conv_block(denoising_output)
+        #print(f'one_conv_output: {one_conv_output.shape}')
         intermediate_outputs['one_conv_output'] = one_conv_output
-        
+
         # Cooperative Attention
         attention_output = self.cooperative_attention(one_conv_output)
+        #print(f'attention_output: {attention_output.shape}')
         intermediate_outputs['attention_output'] = attention_output
-        
+
         # Residual Blocks
         residual_output = self.residual_blocks(attention_output)
+        #print(f'residual_output: {residual_output.shape}')
         intermediate_outputs['residual_output'] = residual_output
-        
+
         # Add residual output to attention_output
-        combined_output = residual_output + attention_output
+        combined_output = residual_output + one_conv_output
+        #print(f'combined_output: {combined_output.shape}')
         intermediate_outputs['combined_output'] = combined_output
-        
-        # Deconvolution Blocks
-        deconv_output = self.deconv_blocks(combined_output)
-        intermediate_outputs['deconv_output'] = deconv_output
-        
+
+        # Convolution Blocks leading to a single-channel output
+        conv_output = self.conv_blocks(combined_output)
+        #print(f'conv_output: {conv_output.shape}')
+        intermediate_outputs['conv_output'] = conv_output
+
         # Add global cross-layer connection from input to the final output
-        final_output = deconv_output + x
+        final_output = conv_output + x
+        #print(f'final_output: {final_output.shape}')
         intermediate_outputs['final_output'] = final_output
-        
+
         # Apply final tanh activation to map to pixel value range
         output = self.final_activation(final_output)
+        #print(f'output: {output.shape}')
         intermediate_outputs['output'] = output
-        
+
         return output, intermediate_outputs
 
 class Discriminator(nn.Module):
@@ -244,7 +263,7 @@ class TextureLoss(nn.Module):
 
 class ContentLoss(nn.Module):
     def forward(self, img1, img2):
-        return torch.sqrt(F.l1_loss(img1, img2) ** 2 + 1e-8)
+        return F.mse_loss(img1, img2)
 
 class WGAN_GP_Loss(nn.Module):
     def __init__(self, discriminator, lambda_gp=10):
@@ -274,11 +293,14 @@ class WGAN_GP_Loss(nn.Module):
         gradient_penalty = self.lambda_gp * ((gradient_norm - 1) ** 2).mean()
         return gradient_penalty
 
-    def forward(self, real_images, fake_images):
+    def discriminator_loss(self, real_images, fake_images):
         d_real = self.discriminator(real_images).mean()
         d_fake = self.discriminator(fake_images).mean()
         gp = self.gradient_penalty(real_images, fake_images)
         return d_fake - d_real + gp
+
+    def generator_loss(self, fake_images):
+        return -self.discriminator(fake_images).mean()
 
 class MultimodalLoss(nn.Module):
     def __init__(self, discriminator, lambda1, lambda2, lambda3, lambda4):
@@ -287,16 +309,16 @@ class MultimodalLoss(nn.Module):
         self.content_loss = ContentLoss()
         self.texture_loss = TextureLoss()
         self.adversarial_loss = WGAN_GP_Loss(discriminator)
-        self.lambda1 = lambda1
-        self.lambda2 = lambda2
-        self.lambda3 = lambda3
-        self.lambda4 = lambda4
+        self.lambda1 = lambda1  # Weight for perceptual loss
+        self.lambda2 = lambda2  # Weight for content loss
+        self.lambda3 = lambda3  # Weight for texture loss
+        self.lambda4 = lambda4  # Weight for adversarial loss
 
     def forward(self, generated_images, real_images, noisy_images):
         l_percep = self.perceptual_loss(real_images, generated_images)
         l_content = self.content_loss(generated_images, real_images)
         l_texture = self.texture_loss(generated_images, real_images)
-        l_adversarial = self.adversarial_loss(real_images, generated_images)
+        l_adversarial = self.adversarial_loss.generator_loss(generated_images)
         total_loss = self.lambda1 * l_percep + self.lambda2 * l_content + self.lambda3 * l_texture + self.lambda4 * l_adversarial
         return total_loss
 
@@ -329,35 +351,23 @@ def register_hooks(generator, writer, epoch):
     
     return hooks
 
-def weights_init(m, init_type='normal'):
-    classname = m.__class__.__name__
-    if hasattr(m, 'weight') and 'Conv' in classname:
-        if init_type == 'normal':
-            nn.init.normal_(m.weight.data, 0.0, 0.02)
-        elif init_type == 'xavier':
-            nn.init.xavier_normal_(m.weight.data, gain=nn.init.calculate_gain('leaky_relu'))
-        elif init_type == 'kaiming':
-            nn.init.kaiming_normal_(m.weight.data, mode='fan_out', nonlinearity='leaky_relu')
-    elif hasattr(m, 'bias') and 'BatchNorm' in classname:
-        nn.init.normal_(m.weight.data, 1.0, 0.02)
-        nn.init.constant_(m.bias.data, 0)
-
-# Ensure residual blocks are also properly initialized
 def initialize_weights(module):
     if isinstance(module, nn.Conv2d) or isinstance(module, nn.ConvTranspose2d):
         nn.init.kaiming_normal_(module.weight, mode='fan_out', nonlinearity='leaky_relu')
     elif isinstance(module, nn.BatchNorm2d):
         nn.init.constant_(module.weight, 1)
         nn.init.constant_(module.bias, 0)
+    elif isinstance(module, ResidualBlock):
+        module.initialize_weights()
 
-def train_rca_gan(train_loader, val_loader, num_epochs=1, lambda_pixel=1, lambda_perceptual=0.01, lambda_texture=0.001,
-                  lr=0.00005, betas=(0.5, 0.999), init_type='normal', log_dir='runs/paper_gan', use_tensorboard=True, device=torch.device("cuda" if torch.cuda.is_available() else "mps")):
+def train_rca_gan(train_loader, val_loader, num_epochs=1, lambda_perceptual=1.0, lambda_content=0.01, lambda_texture=0.001, lambda_adversarial=1.0,
+                  lr=0.0005, betas=(0.5, 0.999), init_type='normal', log_dir='runs/paper_gan', use_tensorboard=True, device=torch.device("cuda" if torch.cuda.is_available() else "mps")):
     # Initialize the models
     in_channels = 1
     out_channels = 1
     generator = Generator(in_channels, out_channels).to(device)
     discriminator = Discriminator(in_channels).to(device)
-    multimodal_loss = MultimodalLoss(discriminator, lambda_pixel, lambda_perceptual, lambda_texture, 1).to(device)
+    multimodal_loss = MultimodalLoss(discriminator, lambda_perceptual, lambda_content, lambda_texture, lambda_adversarial).to(device)
 
     if use_tensorboard:
         # Initialize TensorBoard writers
@@ -392,23 +402,16 @@ def train_rca_gan(train_loader, val_loader, num_epochs=1, lambda_pixel=1, lambda
             real_data = gt_images
             fake_data = gen_clean.detach()
             
-            # Get discriminator outputs
-            real_output = discriminator(real_data)
-            fake_output = discriminator(fake_data)
-            
             # Calculate discriminator loss
-            d_loss = -torch.mean(real_output) + torch.mean(fake_output)
-            gp = WGAN_GP_Loss(discriminator).gradient_penalty(real_data, fake_data)
-            d_loss += gp
-
+            d_loss = multimodal_loss.adversarial_loss.discriminator_loss(real_data, fake_data)
             d_loss.backward()
             optimizer_D.step()
 
             # Train Generator
             optimizer_G.zero_grad()
-            fake_output = discriminator(gen_clean)
+            fake_data = gen_clean  # Not detached here
             
-            g_loss = multimodal_loss(gen_clean, gt_images, degraded_images)
+            g_loss = multimodal_loss(fake_data, gt_images, degraded_images)
             g_loss.backward()
             optimizer_G.step()
 
@@ -423,7 +426,7 @@ def train_rca_gan(train_loader, val_loader, num_epochs=1, lambda_pixel=1, lambda
                 writer.add_scalar('Loss/Perceptual', multimodal_loss.perceptual_loss(gt_images, gen_clean).item(), global_step)
                 writer.add_scalar('Loss/Content', multimodal_loss.content_loss(gt_images, gen_clean).item(), global_step)
                 writer.add_scalar('Loss/Texture', multimodal_loss.texture_loss(gt_images, gen_clean).item(), global_step)
-                writer.add_scalar('Loss/Adversarial', multimodal_loss.adversarial_loss(gt_images, gen_clean).item(), global_step)
+                writer.add_scalar('Loss/Adversarial', multimodal_loss.adversarial_loss.generator_loss(gen_clean).item(), global_step)
 
             global_step += 1
 
