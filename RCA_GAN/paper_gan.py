@@ -419,7 +419,7 @@ def train_rca_gan(train_loader, val_loader, num_epochs=1,
             optimizer_G.step()
 
             # Print training progress
-            if i % 10 == 0:
+            if i % 1 == 0:
                 print(f"[Epoch {epoch}/{num_epochs}] [Batch {i}/{len(train_loader)}] [D loss: {d_loss.item()}] [G loss: {g_loss.item()}]")
 
             if use_tensorboard:
