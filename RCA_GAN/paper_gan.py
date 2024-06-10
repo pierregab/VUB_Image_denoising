@@ -144,9 +144,9 @@ class Generator(nn.Module):
         # Convolution Blocks leading to a single-channel output
         self.conv_blocks = nn.Sequential(
             ConvBlock(64, 32, kernel_size=3, stride=1, padding=1),  # reduce to 32 channels, kernel size 3
-            ConvBlock(32, 16, kernel_size=5, stride=1, padding=2),  # reduce to 16 channels, kernel size 5
-            ConvBlock(16, 8, kernel_size=7, stride=1, padding=3),   # reduce to 8 channels, kernel size 7
-            ConvBlock(8, 4, kernel_size=5, stride=1, padding=2),    # reduce to 4 channels, kernel size 5
+            ConvBlock(32, 16, kernel_size=3, stride=1, padding=1),  # reduce to 16 channels, kernel size 5
+            ConvBlock(16, 8, kernel_size=3, stride=1, padding=1),   # reduce to 8 channels, kernel size 7
+            ConvBlock(8, 4, kernel_size=3, stride=1, padding=1),    # reduce to 4 channels, kernel size 5
             ConvBlock(4, out_channels, kernel_size=1, stride=1, padding=0),  # finally reduce to out_channels, kernel size 1
         )
 
@@ -362,7 +362,7 @@ def initialize_weights(module):
 
 def train_rca_gan(train_loader, val_loader, num_epochs=1,
                     lambda_perceptual=1.0, lambda_content=0.01, lambda_texture=0.001, lambda_adversarial=1.0,
-                    lr=0.0001, betas=(0.5, 0.999), init_type='normal', log_dir='runs/paper_gan', use_tensorboard=True,
+                    lr=0.0001, betas=(0.4, 0.999), init_type='normal', log_dir='runs/paper_gan', use_tensorboard=True,
                     debug=False, device=torch.device("cuda" if torch.cuda.is_available() else "mps")):
     
     # Initialize the models
