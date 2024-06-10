@@ -266,7 +266,7 @@ class ContentLoss(nn.Module):
         return F.mse_loss(img1, img2)
 
 class WGAN_GP_Loss(nn.Module):
-    def __init__(self, discriminator, lambda_gp=10):
+    def __init__(self, discriminator, lambda_gp=20):
         super(WGAN_GP_Loss, self).__init__()
         self.discriminator = discriminator
         self.lambda_gp = lambda_gp
@@ -362,7 +362,7 @@ def initialize_weights(module):
 
 def train_rca_gan(train_loader, val_loader, num_epochs=1,
                     lambda_perceptual=1.0, lambda_content=0.01, lambda_texture=0.001, lambda_adversarial=1.0,
-                    lr=0.0005, betas=(0.5, 0.999), init_type='normal', log_dir='runs/paper_gan', use_tensorboard=True,
+                    lr=0.0001, betas=(0.5, 0.999), init_type='normal', log_dir='runs/paper_gan', use_tensorboard=True,
                     debug=False, device=torch.device("cuda" if torch.cuda.is_available() else "mps")):
     
     # Initialize the models
