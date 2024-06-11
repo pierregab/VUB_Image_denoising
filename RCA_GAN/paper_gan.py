@@ -270,7 +270,7 @@ class ContentLoss(nn.Module):
 
 # Define the WGAN_GP_Loss class
 class WGAN_GP_Loss(nn.Module):
-    def __init__(self, discriminator, lambda_gp=5):
+    def __init__(self, discriminator, lambda_gp=10):
         super(WGAN_GP_Loss, self).__init__()
         self.discriminator = discriminator
         self.lambda_gp = lambda_gp
