@@ -384,15 +384,6 @@ def adjust_learning_rates(optimizer_G, optimizer_D, g_loss, d_loss, base_lr=1e-4
         for param_group in optimizer_D.param_groups:
             param_group['lr'] = base_lr
 
-# Function to dynamically adjust training steps
-def dynamic_train_steps(d_loss, g_loss, d_threshold=0.3, g_threshold=0.3):
-    if d_loss < d_threshold:
-        return 1, 2  # Train generator more
-    elif g_loss < g_threshold:
-        return 2, 1  # Train discriminator more
-    else:
-        return 1, 1  # Train both equally
-
 # Training function
 def train_rca_gan(train_loader, val_loader, num_epochs=1,
                     lambda_perceptual=1.0, lambda_content=0.01, lambda_texture=0.001, lambda_adversarial=1.0,
@@ -429,6 +420,7 @@ def train_rca_gan(train_loader, val_loader, num_epochs=1,
             degraded_images = degraded_images.to(device)
             gt_images = gt_images.to(device)
 
+            # Train Discriminator
             optimizer_D.zero_grad()
             gen_clean, _ = generator(degraded_images)
             real_data = gt_images
@@ -437,9 +429,9 @@ def train_rca_gan(train_loader, val_loader, num_epochs=1,
             d_loss.backward()
             optimizer_D.step()
 
+            # Train Generator
             optimizer_G.zero_grad()
-            fake_data = gen_clean
-            g_loss = multimodal_loss(fake_data, gt_images, degraded_images)
+            g_loss = multimodal_loss(gen_clean, gt_images, degraded_images)
             g_loss.backward()
             optimizer_G.step()
 
@@ -455,26 +447,6 @@ def train_rca_gan(train_loader, val_loader, num_epochs=1,
                 writer.add_scalar('Loss/Adversarial', multimodal_loss.adversarial_loss.generator_loss(gen_clean).item(), global_step)
 
             global_step += 1
-
-            # Dynamically adjust training steps and learning rates
-            d_steps, g_steps = dynamic_train_steps(d_loss.item(), g_loss.item())
-            for _ in range(d_steps):
-                optimizer_D.zero_grad()
-                gen_clean, _ = generator(degraded_images)
-                real_data = gt_images
-                fake_data = gen_clean.detach()
-                d_loss = multimodal_loss.adversarial_loss.discriminator_loss(real_data, fake_data)
-                d_loss.backward()
-                optimizer_D.step()
-
-            for _ in range(g_steps):
-                optimizer_G.zero_grad()
-                fake_data = gen_clean
-                g_loss = multimodal_loss(fake_data, gt_images, degraded_images)
-                g_loss.backward(retain_graph=True)
-                optimizer_G.step()
-
-            adjust_learning_rates(optimizer_G, optimizer_D, g_loss.item(), d_loss.item())
 
         val_loss = 0.0
         with torch.no_grad():
