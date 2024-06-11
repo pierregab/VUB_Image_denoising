@@ -5,6 +5,8 @@ import torch.nn.functional as F
 import torch.optim as optim
 from torch.utils.tensorboard import SummaryWriter
 import torchvision
+from collections import deque
+import numpy as np
 
 # Define the ChannelAttention class
 class ChannelAttention(nn.Module):
@@ -365,7 +367,55 @@ def initialize_weights(module):
     elif isinstance(module, ResidualBlock):
         module.initialize_weights()
 
-# Training function for RCA-GAN
+# History Buffer
+class HistoryBuffer:
+    def __init__(self, max_size=50):
+        self.max_size = max_size
+        self.buffer = deque(maxlen=max_size)
+
+    def push_and_pop(self, data):
+        to_return = []
+        for element in data:
+            if len(self.buffer) < self.max_size:
+                self.buffer.append(element)
+                to_return.append(element)
+            else:
+                if np.random.uniform(0, 1) > 0.5:
+                    i = np.random.randint(0, len(self.buffer))
+                    to_return.append(self.buffer[i].clone())
+                    self.buffer[i] = element
+                else:
+                    to_return.append(element)
+        return torch.stack(to_return)
+
+# Function to adjust learning rates
+def adjust_learning_rates(optimizer_G, optimizer_D, g_loss, d_loss, base_lr=1e-4):
+    if g_loss < d_loss:
+        for param_group in optimizer_G.param_groups:
+            param_group['lr'] = base_lr / 2
+        for param_group in optimizer_D.param_groups:
+            param_group['lr'] = base_lr * 2
+    elif d_loss < g_loss:
+        for param_group in optimizer_G.param_groups:
+            param_group['lr'] = base_lr * 2
+        for param_group in optimizer_D.param_groups:
+            param_group['lr'] = base_lr / 2
+    else:
+        for param_group in optimizer_G.param_groups:
+            param_group['lr'] = base_lr
+        for param_group in optimizer_D.param_groups:
+            param_group['lr'] = base_lr
+
+# Function to dynamically adjust training steps
+def dynamic_train_steps(d_loss, g_loss, d_threshold=0.3, g_threshold=0.3):
+    if d_loss < d_threshold:
+        return 1, 2  # Train generator more
+    elif g_loss < g_threshold:
+        return 2, 1  # Train discriminator more
+    else:
+        return 1, 1  # Train both equally
+
+# Training function
 def train_rca_gan(train_loader, val_loader, num_epochs=1,
                     lambda_perceptual=1.0, lambda_content=0.01, lambda_texture=0.001, lambda_adversarial=1.0,
                     lr_G=1e-4, lr_D=5e-5, betas_G=(0.5, 0.999), betas_D=(0.9, 0.999),
@@ -380,7 +430,6 @@ def train_rca_gan(train_loader, val_loader, num_epochs=1,
     multimodal_loss = MultimodalLoss(discriminator, lambda_perceptual, lambda_content, lambda_texture, lambda_adversarial).to(device)
 
     if use_tensorboard:
-        # Initialize TensorBoard writers
         writer = SummaryWriter(log_dir=log_dir)
         writer_debug = SummaryWriter(log_dir=f'{log_dir}/debug') if debug else None
 
@@ -396,21 +445,20 @@ def train_rca_gan(train_loader, val_loader, num_epochs=1,
     scheduler_D = optim.lr_scheduler.StepLR(optimizer_D, step_size=10, gamma=0.5)
 
     global_step = 0
-    n_discriminator_steps = 3
+    history_buffer = HistoryBuffer(max_size=50)
 
     for epoch in range(num_epochs):
         for i, (degraded_images, gt_images) in enumerate(train_loader):
             degraded_images = degraded_images.to(device)
             gt_images = gt_images.to(device)
 
-            for _ in range(n_discriminator_steps):
-                optimizer_D.zero_grad()
-                gen_clean, _ = generator(degraded_images)
-                real_data = gt_images
-                fake_data = gen_clean.detach()
-                d_loss = multimodal_loss.adversarial_loss.discriminator_loss(real_data, fake_data)
-                d_loss.backward()
-                optimizer_D.step()
+            optimizer_D.zero_grad()
+            gen_clean, _ = generator(degraded_images)
+            real_data = gt_images
+            fake_data = history_buffer.push_and_pop(gen_clean.detach())
+            d_loss = multimodal_loss.adversarial_loss.discriminator_loss(real_data, fake_data)
+            d_loss.backward()
+            optimizer_D.step()
 
             optimizer_G.zero_grad()
             fake_data = gen_clean
@@ -430,6 +478,26 @@ def train_rca_gan(train_loader, val_loader, num_epochs=1,
                 writer.add_scalar('Loss/Adversarial', multimodal_loss.adversarial_loss.generator_loss(gen_clean).item(), global_step)
 
             global_step += 1
+
+            # Dynamically adjust training steps and learning rates
+            d_steps, g_steps = dynamic_train_steps(d_loss.item(), g_loss.item())
+            for _ in range(d_steps):
+                optimizer_D.zero_grad()
+                gen_clean, _ = generator(degraded_images)
+                real_data = gt_images
+                fake_data = history_buffer.push_and_pop(gen_clean.detach())
+                d_loss = multimodal_loss.adversarial_loss.discriminator_loss(real_data, fake_data)
+                d_loss.backward()
+                optimizer_D.step()
+
+            for _ in range(g_steps):
+                optimizer_G.zero_grad()
+                fake_data = gen_clean
+                g_loss = multimodal_loss(fake_data, gt_images, degraded_images)
+                g_loss.backward()
+                optimizer_G.step()
+
+            adjust_learning_rates(optimizer_G, optimizer_D, g_loss.item(), d_loss.item())
 
         val_loss = 0.0
         with torch.no_grad():
