@@ -380,45 +380,38 @@ def train_rca_gan(train_loader, val_loader, num_epochs=1,
     generator.apply(initialize_weights)
     discriminator.apply(initialize_weights)
 
-    # Optimizers
-    optimizer_G = optim.Adam(generator.parameters(), lr=lr, betas=betas)
-    optimizer_D = optim.Adam(discriminator.parameters(), lr=lr, betas=betas)
+    # Example: Adjust learning rates and optimizer betas
+    lr_G = 1e-4
+    lr_D = 5e-5
+    betas_G = (0.5, 0.999)
+    betas_D = (0.9, 0.999)
 
-    # Learning rate schedulers
-    scheduler_G = optim.lr_scheduler.StepLR(optimizer_G, step_size=10, gamma=0.5)
-    scheduler_D = optim.lr_scheduler.StepLR(optimizer_D, step_size=10, gamma=0.5)
+    optimizer_G = optim.Adam(generator.parameters(), lr=lr_G, betas=betas_G)
+    optimizer_D = optim.Adam(discriminator.parameters(), lr=lr_D, betas=betas_D)
 
-    global_step = 0
+    # Example: Train discriminator more steps per generator step
+    n_discriminator_steps = 3
 
     for epoch in range(num_epochs):
         for i, (degraded_images, gt_images) in enumerate(train_loader):
             degraded_images = degraded_images.to(device)
             gt_images = gt_images.to(device)
 
-            # Train Discriminator
-            optimizer_D.zero_grad()
-            
-            # Generate clean images
-            gen_clean, intermediate_outputs = generator(degraded_images)
-            
-            # Prepare real and fake data for discriminator
-            real_data = gt_images
-            fake_data = gen_clean.detach()  # Detach the generated images
-            
-            # Calculate discriminator loss
-            d_loss = multimodal_loss.adversarial_loss.discriminator_loss(real_data, fake_data)
-            d_loss.backward()
-            optimizer_D.step()
+            for _ in range(n_discriminator_steps):
+                optimizer_D.zero_grad()
+                gen_clean, _ = generator(degraded_images)
+                real_data = gt_images
+                fake_data = gen_clean.detach()
+                d_loss = multimodal_loss.adversarial_loss.discriminator_loss(real_data, fake_data)
+                d_loss.backward()
+                optimizer_D.step()
 
-            # Train Generator
             optimizer_G.zero_grad()
-            fake_data = gen_clean  # Not detached here
-            
-            g_loss = multimodal_loss(fake_data, gt_images, degraded_images)
+            gen_clean, _ = generator(degraded_images)
+            g_loss = multimodal_loss(gen_clean, gt_images, degraded_images)
             g_loss.backward()
             optimizer_G.step()
 
-            # Print training progress
             if i % 1 == 0:
                 print(f"[Epoch {epoch}/{num_epochs}] [Batch {i}/{len(train_loader)}] [D loss: {d_loss.item()}] [G loss: {g_loss.item()}]")
 
