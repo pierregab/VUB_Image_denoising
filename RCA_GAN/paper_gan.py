@@ -390,7 +390,7 @@ def train_rca_gan(train_loader, val_loader, num_epochs=1,
                     lr_G=1e-4, lr_D=5e-5, betas_G=(0.5, 0.999), betas_D=(0.9, 0.999),
                     init_type='normal', log_dir='runs/paper_gan', use_tensorboard=True,
                     debug=False, device=torch.device("cuda" if torch.cuda.is_available() else "mps"),
-                    discriminator_steps=5):  # Add a parameter for discriminator steps
+                    discriminator_steps=2):  # Add a parameter for discriminator steps
     
     # Initialize the models
     in_channels = 1
