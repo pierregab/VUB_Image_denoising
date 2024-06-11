@@ -435,6 +435,8 @@ def train_rca_gan(train_loader, val_loader, num_epochs=1,
             g_loss.backward()
             optimizer_G.step()
 
+            adjust_learning_rates(optimizer_G, optimizer_D, g_loss.item(), d_loss.item())
+
             if i % 1 == 0:
                 print(f"[Epoch {epoch}/{num_epochs}] [Batch {i}/{len(train_loader)}] [D loss: {d_loss.item()}] [G loss: {g_loss.item()}]")
 
