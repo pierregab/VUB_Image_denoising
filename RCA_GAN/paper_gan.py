@@ -6,6 +6,7 @@ import torch.optim as optim
 from torch.utils.tensorboard import SummaryWriter
 import torchvision
 
+# Define the ChannelAttention class
 class ChannelAttention(nn.Module):
     def __init__(self, in_channels):
         super(ChannelAttention, self).__init__()
@@ -23,6 +24,7 @@ class ChannelAttention(nn.Module):
         mc = self.sigmoid(weights * normalized_bn_out + self.beta)
         return mc * x
 
+# Define the SpatialAttention class
 class SpatialAttention(nn.Module):
     def __init__(self, in_channels):
         super(SpatialAttention, self).__init__()
@@ -36,6 +38,7 @@ class SpatialAttention(nn.Module):
         ms = self.sigmoid(self.conv1(combined))
         return ms * x
 
+# Define the CooperativeAttention class
 class CooperativeAttention(nn.Module):
     def __init__(self, in_channels):
         super(CooperativeAttention, self).__init__()
@@ -47,6 +50,7 @@ class CooperativeAttention(nn.Module):
         x = self.spatial_attention(x)
         return x
 
+# Define the ConvBlock class
 class ConvBlock(nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size=3, stride=1, padding=1):
         super(ConvBlock, self).__init__()
@@ -57,6 +61,7 @@ class ConvBlock(nn.Module):
     def forward(self, x):
         return self.lrelu(self.bn(self.conv(x)))
 
+# Define the ResidualBlock class
 class ResidualBlock(nn.Module):
     def __init__(self, in_channels):
         super(ResidualBlock, self).__init__()
@@ -79,7 +84,6 @@ class ResidualBlock(nn.Module):
         out = self.bn2(out)
         out += identity
         out = self.lrelu(out)
-        #out = self.output_norm(out)  # Normalize the output
         return out
 
     def initialize_weights(self):
@@ -88,6 +92,7 @@ class ResidualBlock(nn.Module):
         nn.init.normal_(self.conv2.weight, mean=0.0, std=0.001)
         nn.init.constant_(self.conv2.bias, 0)
 
+# Define the DeconvBlock class
 class DeconvBlock(nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size=3, stride=1, padding=1):
         super(DeconvBlock, self).__init__()
@@ -98,6 +103,7 @@ class DeconvBlock(nn.Module):
     def forward(self, x):
         return self.lrelu(self.bn(self.conv(x)))
 
+# Define the MultiScaleConv class
 class MultiScaleConv(nn.Module):
     def __init__(self, in_channels, out_channels):
         super(MultiScaleConv, self).__init__()
@@ -121,7 +127,8 @@ class MultiScaleConv(nn.Module):
         out7x7 = self.bn7x7(self.conv7x7(x))
         concatenated = torch.cat([out1x1, out3x3, out5x5, out7x7], dim=1)
         return self.bn_final(self.final_conv(concatenated))
-    
+
+# Define the Generator class
 class Generator(nn.Module):
     def __init__(self, in_channels, out_channels):
         super(Generator, self).__init__()
@@ -158,12 +165,10 @@ class Generator(nn.Module):
 
         # Initial Conv Block
         initial_conv_output = self.initial_conv(x)
-        #print(f'initial_conv_output: {initial_conv_output.shape}')
         intermediate_outputs['initial_conv_output'] = initial_conv_output
 
         # Feature Domain Denoising
         denoising_output = self.denoising_blocks(initial_conv_output)
-        #print(f'denoising_output: {denoising_output.shape}')
         intermediate_outputs['denoising_output'] = denoising_output
 
         # Subtract initial conv result from denoising output
@@ -171,41 +176,35 @@ class Generator(nn.Module):
 
         # One Convolution Block
         one_conv_output = self.one_conv_block(denoising_output)
-        #print(f'one_conv_output: {one_conv_output.shape}')
         intermediate_outputs['one_conv_output'] = one_conv_output
 
         # Cooperative Attention
         attention_output = self.cooperative_attention(one_conv_output)
-        #print(f'attention_output: {attention_output.shape}')
         intermediate_outputs['attention_output'] = attention_output
 
         # Residual Blocks
         residual_output = self.residual_blocks(attention_output)
-        #print(f'residual_output: {residual_output.shape}')
         intermediate_outputs['residual_output'] = residual_output
 
         # Add residual output to attention_output
         combined_output = residual_output + one_conv_output
-        #print(f'combined_output: {combined_output.shape}')
         intermediate_outputs['combined_output'] = combined_output
 
         # Convolution Blocks leading to a single-channel output
         conv_output = self.conv_blocks(combined_output)
-        #print(f'conv_output: {conv_output.shape}')
         intermediate_outputs['conv_output'] = conv_output
 
         # Add global cross-layer connection from input to the final output
         final_output = conv_output + x
-        #print(f'final_output: {final_output.shape}')
         intermediate_outputs['final_output'] = final_output
 
         # Apply final tanh activation to map to pixel value range
         output = self.final_activation(final_output)
-        #print(f'output: {output.shape}')
         intermediate_outputs['output'] = output
 
         return output, intermediate_outputs
 
+# Define the Discriminator class
 class Discriminator(nn.Module):
     def __init__(self, in_channels):
         super(Discriminator, self).__init__()
@@ -233,6 +232,7 @@ class Discriminator(nn.Module):
         x = self.fc_layers(x)
         return x
 
+# Define the PerceptualLoss class
 class PerceptualLoss(nn.Module):
     def __init__(self, feature_layer=8):
         super(PerceptualLoss, self).__init__()
@@ -249,6 +249,7 @@ class PerceptualLoss(nn.Module):
         f2 = self.feature_extractor(img2)
         return F.mse_loss(f1, f2)
 
+# Define the TextureLoss class
 class TextureLoss(nn.Module):
     def gram_matrix(self, input):
         a, b, c, d = input.size()  # a=batch size(=1)
@@ -261,10 +262,12 @@ class TextureLoss(nn.Module):
         G2 = self.gram_matrix(img2)
         return F.mse_loss(G1, G2)
 
+# Define the ContentLoss class
 class ContentLoss(nn.Module):
     def forward(self, img1, img2):
         return F.mse_loss(img1, img2)
 
+# Define the WGAN_GP_Loss class
 class WGAN_GP_Loss(nn.Module):
     def __init__(self, discriminator, lambda_gp=20):
         super(WGAN_GP_Loss, self).__init__()
@@ -302,6 +305,7 @@ class WGAN_GP_Loss(nn.Module):
     def generator_loss(self, fake_images):
         return -self.discriminator(fake_images).mean()
 
+# Define the MultimodalLoss class
 class MultimodalLoss(nn.Module):
     def __init__(self, discriminator, lambda1, lambda2, lambda3, lambda4):
         super(MultimodalLoss, self).__init__()
@@ -326,6 +330,7 @@ class MultimodalLoss(nn.Module):
 def denormalize(tensor):
     return tensor * 0.5 + 0.5
 
+# Function to visualize activation in TensorBoard
 def visualize_activation(name, writer, epoch):
     def hook(model, input, output):
         # Normalize the output for visualization
@@ -342,15 +347,15 @@ def visualize_activation(name, writer, epoch):
         writer.add_image(name, grid, epoch)
     return hook
 
+# Function to register hooks for intermediate layer visualization
 def register_hooks(generator, writer, epoch):
     hooks = {}
     
-    # Register hook for the last deconv block only
-    hooks["deconv_blocks_last"] = generator.deconv_blocks[-1].register_forward_hook(visualize_activation("Deconv Block Last", writer, epoch))
     hooks["initial_conv"] = generator.initial_conv.register_forward_hook(visualize_activation("Initial Conv Output", writer, epoch))
     
     return hooks
 
+# Function to initialize weights of the network
 def initialize_weights(module):
     if isinstance(module, nn.Conv2d) or isinstance(module, nn.ConvTranspose2d):
         nn.init.kaiming_normal_(module.weight, mode='fan_out', nonlinearity='leaky_relu')
@@ -360,9 +365,11 @@ def initialize_weights(module):
     elif isinstance(module, ResidualBlock):
         module.initialize_weights()
 
+# Training function for RCA-GAN
 def train_rca_gan(train_loader, val_loader, num_epochs=1,
                     lambda_perceptual=1.0, lambda_content=0.01, lambda_texture=0.001, lambda_adversarial=1.0,
-                    lr=0.0001, betas=(0.4, 0.999), init_type='normal', log_dir='runs/paper_gan', use_tensorboard=True,
+                    lr_G=1e-4, lr_D=5e-5, betas_G=(0.5, 0.999), betas_D=(0.9, 0.999),
+                    init_type='normal', log_dir='runs/paper_gan', use_tensorboard=True,
                     debug=False, device=torch.device("cuda" if torch.cuda.is_available() else "mps")):
     
     # Initialize the models
@@ -380,16 +387,15 @@ def train_rca_gan(train_loader, val_loader, num_epochs=1,
     generator.apply(initialize_weights)
     discriminator.apply(initialize_weights)
 
-    # Example: Adjust learning rates and optimizer betas
-    lr_G = 1e-4
-    lr_D = 5e-5
-    betas_G = (0.5, 0.999)
-    betas_D = (0.9, 0.999)
-
+    # Optimizers
     optimizer_G = optim.Adam(generator.parameters(), lr=lr_G, betas=betas_G)
     optimizer_D = optim.Adam(discriminator.parameters(), lr=lr_D, betas=betas_D)
 
-    # Example: Train discriminator more steps per generator step
+    # Learning rate schedulers
+    scheduler_G = optim.lr_scheduler.StepLR(optimizer_G, step_size=10, gamma=0.5)
+    scheduler_D = optim.lr_scheduler.StepLR(optimizer_D, step_size=10, gamma=0.5)
+
+    global_step = 0
     n_discriminator_steps = 3
 
     for epoch in range(num_epochs):
@@ -407,8 +413,8 @@ def train_rca_gan(train_loader, val_loader, num_epochs=1,
                 optimizer_D.step()
 
             optimizer_G.zero_grad()
-            gen_clean, _ = generator(degraded_images)
-            g_loss = multimodal_loss(gen_clean, gt_images, degraded_images)
+            fake_data = gen_clean
+            g_loss = multimodal_loss(fake_data, gt_images, degraded_images)
             g_loss.backward()
             optimizer_G.step()
 
@@ -416,7 +422,6 @@ def train_rca_gan(train_loader, val_loader, num_epochs=1,
                 print(f"[Epoch {epoch}/{num_epochs}] [Batch {i}/{len(train_loader)}] [D loss: {d_loss.item()}] [G loss: {g_loss.item()}]")
 
             if use_tensorboard:
-                # Log batch losses to TensorBoard
                 writer.add_scalar('Loss/Discriminator', d_loss.item(), global_step)
                 writer.add_scalar('Loss/Generator', g_loss.item(), global_step)
                 writer.add_scalar('Loss/Perceptual', multimodal_loss.perceptual_loss(gt_images, gen_clean).item(), global_step)
@@ -426,13 +431,11 @@ def train_rca_gan(train_loader, val_loader, num_epochs=1,
 
             global_step += 1
 
-        # Validation step
         val_loss = 0.0
         with torch.no_grad():
             for degraded_images, gt_images in val_loader:
                 degraded_images = degraded_images.to(device)
                 gt_images = gt_images.to(device)
-                
                 gen_clean, _ = generator(degraded_images)
                 val_loss += multimodal_loss(gen_clean, gt_images, degraded_images).item()
         
@@ -441,32 +444,28 @@ def train_rca_gan(train_loader, val_loader, num_epochs=1,
         if use_tensorboard:
             writer.add_scalar('Loss/Validation', val_loss, epoch)
 
-        # Log example images and intermediate outputs to TensorBoard at the end of each epoch
         if use_tensorboard:
             with torch.no_grad():
-                example_degraded = degraded_images[:4].cpu()  # Take first 4 examples from the last batch
+                example_degraded = degraded_images[:4].cpu()
                 example_gt = gt_images[:4].cpu()
                 example_gen, intermediate_outputs = generator(example_degraded.to(device))
                 example_gen = example_gen.cpu()
                 
-                # Denormalize images to [0, 1] for better visualization
                 example_degraded = denormalize(example_degraded)
                 example_gt = denormalize(example_gt)
                 example_gen = denormalize(example_gen)
 
-                # Log images
                 writer.add_images('Degraded Images', example_degraded, epoch)
                 writer.add_images('Generated Images', example_gen, epoch)
                 writer.add_images('Ground Truth Images', example_gt, epoch)
                 
                 if debug:
-                    # Log intermediate outputs
                     for name, output in intermediate_outputs.items():
-                        output = output[:4].cpu()  # Take first 4 examples
+                        output = output[:4].cpu()
                         output = denormalize(output)
-                        if output.size(1) == 1:  # Convert single-channel to 3-channel
+                        if output.size(1) == 1:
                             output = output.repeat(1, 3, 1, 1)
-                        elif output.size(1) > 3:  # If more than 3 channels, take only the first 3 channels
+                        elif output.size(1) > 3:
                             output = output[:, :3, :, :]
                         writer_debug.add_images(name, output, epoch)
 
