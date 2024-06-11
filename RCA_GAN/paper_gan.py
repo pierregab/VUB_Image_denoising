@@ -5,7 +5,6 @@ import torch.nn.functional as F
 import torch.optim as optim
 from torch.utils.tensorboard import SummaryWriter
 import torchvision
-from collections import deque
 import numpy as np
 
 # Define the ChannelAttention class
@@ -367,27 +366,6 @@ def initialize_weights(module):
     elif isinstance(module, ResidualBlock):
         module.initialize_weights()
 
-# History Buffer
-class HistoryBuffer:
-    def __init__(self, max_size=50):
-        self.max_size = max_size
-        self.buffer = deque(maxlen=max_size)
-
-    def push_and_pop(self, data):
-        to_return = []
-        for element in data:
-            if len(self.buffer) < self.max_size:
-                self.buffer.append(element)
-                to_return.append(element)
-            else:
-                if np.random.uniform(0, 1) > 0.5:
-                    i = np.random.randint(0, len(self.buffer))
-                    to_return.append(self.buffer[i].clone())
-                    self.buffer[i] = element
-                else:
-                    to_return.append(element)
-        return torch.stack(to_return)
-
 # Function to adjust learning rates
 def adjust_learning_rates(optimizer_G, optimizer_D, g_loss, d_loss, base_lr=1e-4):
     if g_loss < d_loss:
@@ -445,7 +423,6 @@ def train_rca_gan(train_loader, val_loader, num_epochs=1,
     scheduler_D = optim.lr_scheduler.StepLR(optimizer_D, step_size=10, gamma=0.5)
 
     global_step = 0
-    history_buffer = HistoryBuffer(max_size=50)
 
     for epoch in range(num_epochs):
         for i, (degraded_images, gt_images) in enumerate(train_loader):
@@ -455,15 +432,15 @@ def train_rca_gan(train_loader, val_loader, num_epochs=1,
             optimizer_D.zero_grad()
             gen_clean, _ = generator(degraded_images)
             real_data = gt_images
-            fake_data = history_buffer.push_and_pop(gen_clean.detach())
+            fake_data = gen_clean.detach()
             d_loss = multimodal_loss.adversarial_loss.discriminator_loss(real_data, fake_data)
-            d_loss.backward(retain_graph=True)
+            d_loss.backward()
             optimizer_D.step()
 
             optimizer_G.zero_grad()
             fake_data = gen_clean
             g_loss = multimodal_loss(fake_data, gt_images, degraded_images)
-            g_loss.backward(retain_graph=True)
+            g_loss.backward()
             optimizer_G.step()
 
             if i % 1 == 0:
@@ -485,9 +462,9 @@ def train_rca_gan(train_loader, val_loader, num_epochs=1,
                 optimizer_D.zero_grad()
                 gen_clean, _ = generator(degraded_images)
                 real_data = gt_images
-                fake_data = history_buffer.push_and_pop(gen_clean.detach())
+                fake_data = gen_clean.detach()
                 d_loss = multimodal_loss.adversarial_loss.discriminator_loss(real_data, fake_data)
-                d_loss.backward(retain_graph=True)
+                d_loss.backward()
                 optimizer_D.step()
 
             for _ in range(g_steps):
