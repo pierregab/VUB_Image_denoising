@@ -57,7 +57,7 @@ class ConvBlock(nn.Module):
         super(ConvBlock, self).__init__()
         self.conv = nn.Conv2d(in_channels, out_channels, kernel_size=kernel_size, stride=stride, padding=padding)
         self.bn = nn.BatchNorm2d(out_channels)
-        self.lrelu = nn.LeakyReLU(0.01, inplace=True)
+        self.lrelu = nn.LeakyReLU(0.01)  # Removed inplace=True
     
     def forward(self, x):
         return self.lrelu(self.bn(self.conv(x)))
@@ -68,7 +68,7 @@ class ResidualBlock(nn.Module):
         super(ResidualBlock, self).__init__()
         self.conv1 = nn.Conv2d(in_channels, in_channels, kernel_size=3, padding=1)
         self.bn1 = nn.BatchNorm2d(in_channels)
-        self.lrelu = nn.LeakyReLU(negative_slope=0.01, inplace=True)
+        self.lrelu = nn.LeakyReLU(negative_slope=0.01)  # Removed inplace=True
         self.conv2 = nn.Conv2d(in_channels, in_channels, kernel_size=3, padding=1)
         self.bn2 = nn.BatchNorm2d(in_channels)
         self.output_norm = nn.BatchNorm2d(in_channels)  # Add a BatchNorm layer for normalization
@@ -99,7 +99,7 @@ class DeconvBlock(nn.Module):
         super(DeconvBlock, self).__init__()
         self.conv = nn.ConvTranspose2d(in_channels, out_channels, kernel_size=kernel_size, stride=stride, padding=padding)
         self.bn = nn.BatchNorm2d(out_channels)
-        self.lrelu = nn.LeakyReLU(0.01, inplace=True)
+        self.lrelu = nn.LeakyReLU(0.01)  # Removed inplace=True
     
     def forward(self, x):
         return self.lrelu(self.bn(self.conv(x)))
@@ -270,7 +270,7 @@ class ContentLoss(nn.Module):
 
 # Define the WGAN_GP_Loss class
 class WGAN_GP_Loss(nn.Module):
-    def __init__(self, discriminator, lambda_gp=10):
+    def __init__(self, discriminator, lambda_gp=20):
         super(WGAN_GP_Loss, self).__init__()
         self.discriminator = discriminator
         self.lambda_gp = lambda_gp
@@ -384,6 +384,7 @@ def adjust_learning_rates(optimizer_G, optimizer_D, g_loss, d_loss, base_lr=1e-4
         for param_group in optimizer_D.param_groups:
             param_group['lr'] = base_lr
 
+# Training function
 def train_rca_gan(train_loader, val_loader, num_epochs=1,
                     lambda_perceptual=1.0, lambda_content=0.01, lambda_texture=0.001, lambda_adversarial=1.0,
                     lr_G=1e-4, lr_D=5e-5, betas_G=(0.5, 0.999), betas_D=(0.9, 0.999),
@@ -391,6 +392,9 @@ def train_rca_gan(train_loader, val_loader, num_epochs=1,
                     debug=False, device=torch.device("cuda" if torch.cuda.is_available() else "mps"),
                     lambda_gp=10):  # Removed discriminator_steps parameter
     
+    # Enable anomaly detection
+    torch.autograd.set_detect_anomaly(True)
+
     # Initialize the models
     in_channels = 1
     out_channels = 1
@@ -421,9 +425,7 @@ def train_rca_gan(train_loader, val_loader, num_epochs=1,
             degraded_images = degraded_images.to(device)
             gt_images = gt_images.to(device)
 
-            # Determine the number of training steps for discriminator and generator
-            d_loss_value = float('inf')
-            g_loss_value = float('inf')
+            # Train Discriminator more frequently
             for _ in range(5):  # Train discriminator 5 times
                 optimizer_D.zero_grad()
                 gen_clean, _ = generator(degraded_images)
@@ -433,17 +435,15 @@ def train_rca_gan(train_loader, val_loader, num_epochs=1,
                 d_loss.backward()
                 nn.utils.clip_grad_norm_(discriminator.parameters(), max_norm=1.0)  # Clipping gradients
                 optimizer_D.step()
-                d_loss_value = d_loss.item()
-                
-            for _ in range(1):  # Train generator once
-                optimizer_G.zero_grad()
-                g_loss = multimodal_loss(gen_clean, gt_images, degraded_images)
-                g_loss.backward()
-                optimizer_G.step()
-                g_loss_value = g_loss.item()
+
+            # Train Generator
+            optimizer_G.zero_grad()
+            g_loss = multimodal_loss(gen_clean, gt_images, degraded_images)
+            g_loss.backward()
+            optimizer_G.step()
 
             # Adjust the number of training steps based on loss values
-            if d_loss_value < g_loss_value:
+            if d_loss.item() < g_loss.item():
                 d_steps, g_steps = 1, 2  # Train generator more
             else:
                 d_steps, g_steps = 2, 1  # Train discriminator more
@@ -462,7 +462,7 @@ def train_rca_gan(train_loader, val_loader, num_epochs=1,
             for _ in range(g_steps):
                 optimizer_G.zero_grad()
                 g_loss = multimodal_loss(gen_clean, gt_images, degraded_images)
-                g_loss.backward()
+                g_loss.backward(retain_graph=True)  # Retain graph for further backward passes
                 optimizer_G.step()
 
             adjust_learning_rates(optimizer_G, optimizer_D, g_loss.item(), d_loss.item())
@@ -533,4 +533,3 @@ def train_rca_gan(train_loader, val_loader, num_epochs=1,
             writer_debug.close()
         
     return generator, discriminator
-
