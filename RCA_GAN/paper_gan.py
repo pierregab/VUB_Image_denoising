@@ -270,7 +270,7 @@ class ContentLoss(nn.Module):
 
 # Define the WGAN_GP_Loss class
 class WGAN_GP_Loss(nn.Module):
-    def __init__(self, discriminator, lambda_gp=20):
+    def __init__(self, discriminator, lambda_gp=5):
         super(WGAN_GP_Loss, self).__init__()
         self.discriminator = discriminator
         self.lambda_gp = lambda_gp
@@ -384,13 +384,12 @@ def adjust_learning_rates(optimizer_G, optimizer_D, g_loss, d_loss, base_lr=1e-4
         for param_group in optimizer_D.param_groups:
             param_group['lr'] = base_lr
 
-# Training function
 def train_rca_gan(train_loader, val_loader, num_epochs=1,
                     lambda_perceptual=1.0, lambda_content=0.01, lambda_texture=0.001, lambda_adversarial=1.0,
                     lr_G=1e-4, lr_D=5e-5, betas_G=(0.5, 0.999), betas_D=(0.9, 0.999),
                     init_type='normal', log_dir='runs/paper_gan', use_tensorboard=True,
                     debug=False, device=torch.device("cuda" if torch.cuda.is_available() else "mps"),
-                    discriminator_steps=2):  # Add a parameter for discriminator steps
+                    lambda_gp=10):  # Removed discriminator_steps parameter
     
     # Initialize the models
     in_channels = 1
@@ -398,6 +397,7 @@ def train_rca_gan(train_loader, val_loader, num_epochs=1,
     generator = Generator(in_channels, out_channels).to(device)
     discriminator = Discriminator(in_channels).to(device)
     multimodal_loss = MultimodalLoss(discriminator, lambda_perceptual, lambda_content, lambda_texture, lambda_adversarial).to(device)
+    multimodal_loss.adversarial_loss.lambda_gp = lambda_gp  # Set lambda_gp
 
     if use_tensorboard:
         writer = SummaryWriter(log_dir=log_dir)
@@ -421,8 +421,10 @@ def train_rca_gan(train_loader, val_loader, num_epochs=1,
             degraded_images = degraded_images.to(device)
             gt_images = gt_images.to(device)
 
-            # Train Discriminator more frequently
-            for _ in range(discriminator_steps):
+            # Determine the number of training steps for discriminator and generator
+            d_loss_value = float('inf')
+            g_loss_value = float('inf')
+            for _ in range(5):  # Train discriminator 5 times
                 optimizer_D.zero_grad()
                 gen_clean, _ = generator(degraded_images)
                 real_data = gt_images
@@ -431,12 +433,37 @@ def train_rca_gan(train_loader, val_loader, num_epochs=1,
                 d_loss.backward()
                 nn.utils.clip_grad_norm_(discriminator.parameters(), max_norm=1.0)  # Clipping gradients
                 optimizer_D.step()
+                d_loss_value = d_loss.item()
+                
+            for _ in range(1):  # Train generator once
+                optimizer_G.zero_grad()
+                g_loss = multimodal_loss(gen_clean, gt_images, degraded_images)
+                g_loss.backward()
+                optimizer_G.step()
+                g_loss_value = g_loss.item()
 
-            # Train Generator
-            optimizer_G.zero_grad()
-            g_loss = multimodal_loss(gen_clean, gt_images, degraded_images)
-            g_loss.backward()
-            optimizer_G.step()
+            # Adjust the number of training steps based on loss values
+            if d_loss_value < g_loss_value:
+                d_steps, g_steps = 1, 2  # Train generator more
+            else:
+                d_steps, g_steps = 2, 1  # Train discriminator more
+
+            # Additional training steps if needed
+            for _ in range(d_steps):
+                optimizer_D.zero_grad()
+                gen_clean, _ = generator(degraded_images)
+                real_data = gt_images
+                fake_data = gen_clean.detach()
+                d_loss = multimodal_loss.adversarial_loss.discriminator_loss(real_data, fake_data)
+                d_loss.backward()
+                nn.utils.clip_grad_norm_(discriminator.parameters(), max_norm=1.0)  # Clipping gradients
+                optimizer_D.step()
+            
+            for _ in range(g_steps):
+                optimizer_G.zero_grad()
+                g_loss = multimodal_loss(gen_clean, gt_images, degraded_images)
+                g_loss.backward()
+                optimizer_G.step()
 
             adjust_learning_rates(optimizer_G, optimizer_D, g_loss.item(), d_loss.item())
 
@@ -506,3 +533,4 @@ def train_rca_gan(train_loader, val_loader, num_epochs=1,
             writer_debug.close()
         
     return generator, discriminator
+
