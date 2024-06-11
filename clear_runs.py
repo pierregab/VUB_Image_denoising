@@ -4,7 +4,7 @@ import os
 import shutil
 
 # Define the path to the runs folder
-runs_folder = 'runs/paper_gan'
+runs_folder = 'runs'
 
 # Clear the runs folder
 shutil.rmtree(runs_folder, ignore_errors=True)
