@@ -389,7 +389,8 @@ def train_rca_gan(train_loader, val_loader, num_epochs=1,
                     lambda_perceptual=1.0, lambda_content=0.01, lambda_texture=0.001, lambda_adversarial=1.0,
                     lr_G=1e-4, lr_D=5e-5, betas_G=(0.5, 0.999), betas_D=(0.9, 0.999),
                     init_type='normal', log_dir='runs/paper_gan', use_tensorboard=True,
-                    debug=False, device=torch.device("cuda" if torch.cuda.is_available() else "mps")):
+                    debug=False, device=torch.device("cuda" if torch.cuda.is_available() else "mps"),
+                    discriminator_steps=5):  # Add a parameter for discriminator steps
     
     # Initialize the models
     in_channels = 1
@@ -420,14 +421,15 @@ def train_rca_gan(train_loader, val_loader, num_epochs=1,
             degraded_images = degraded_images.to(device)
             gt_images = gt_images.to(device)
 
-            # Train Discriminator
-            optimizer_D.zero_grad()
-            gen_clean, _ = generator(degraded_images)
-            real_data = gt_images
-            fake_data = gen_clean.detach()
-            d_loss = multimodal_loss.adversarial_loss.discriminator_loss(real_data, fake_data)
-            d_loss.backward()
-            optimizer_D.step()
+            # Train Discriminator more frequently
+            for _ in range(discriminator_steps):
+                optimizer_D.zero_grad()
+                gen_clean, _ = generator(degraded_images)
+                real_data = gt_images
+                fake_data = gen_clean.detach()
+                d_loss = multimodal_loss.adversarial_loss.discriminator_loss(real_data, fake_data)
+                d_loss.backward()
+                optimizer_D.step()
 
             # Train Generator
             optimizer_G.zero_grad()
@@ -503,3 +505,4 @@ def train_rca_gan(train_loader, val_loader, num_epochs=1,
             writer_debug.close()
         
     return generator, discriminator
+
