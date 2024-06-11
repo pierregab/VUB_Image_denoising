@@ -32,7 +32,7 @@ def main():
 
     # Train the model with the current hyperparameters
     train_rca_gan(
-        train_loader, val_loader, num_epochs=20, betas=(0.5, 0.999), init_type='xavier',
+        train_loader, val_loader, num_epochs=20, init_type='xavier',
     )
 
 if __name__ == '__main__':
