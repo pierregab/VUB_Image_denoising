@@ -408,7 +408,7 @@ def train_rca_gan(train_loader, val_loader, num_epochs=1,
 
     # Optimizers
     optimizer_G = optim.Adam(generator.parameters(), lr=lr_G, betas=betas_G)
-    optimizer_D = optim.Adam(discriminator.parameters(), lr=lr_D, betas=betas_D)
+    optimizer_D = optim.Adam(discriminator.parameters(), lr=lr_D * 0.5, betas=betas_D, weight_decay=1e-4)  # Reduced learning rate and added L2 regularization for the discriminator
 
     # Learning rate schedulers
     scheduler_G = optim.lr_scheduler.StepLR(optimizer_G, step_size=10, gamma=0.5)
@@ -429,6 +429,7 @@ def train_rca_gan(train_loader, val_loader, num_epochs=1,
                 fake_data = gen_clean.detach()
                 d_loss = multimodal_loss.adversarial_loss.discriminator_loss(real_data, fake_data)
                 d_loss.backward()
+                nn.utils.clip_grad_norm_(discriminator.parameters(), max_norm=1.0)  # Clipping gradients
                 optimizer_D.step()
 
             # Train Generator
@@ -505,4 +506,3 @@ def train_rca_gan(train_loader, val_loader, num_epochs=1,
             writer_debug.close()
         
     return generator, discriminator
-
