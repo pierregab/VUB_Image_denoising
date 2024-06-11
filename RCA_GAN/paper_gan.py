@@ -457,13 +457,13 @@ def train_rca_gan(train_loader, val_loader, num_epochs=1,
             real_data = gt_images
             fake_data = history_buffer.push_and_pop(gen_clean.detach())
             d_loss = multimodal_loss.adversarial_loss.discriminator_loss(real_data, fake_data)
-            d_loss.backward()
+            d_loss.backward(retain_graph=True)
             optimizer_D.step()
 
             optimizer_G.zero_grad()
             fake_data = gen_clean
             g_loss = multimodal_loss(fake_data, gt_images, degraded_images)
-            g_loss.backward()
+            g_loss.backward(retain_graph=True)
             optimizer_G.step()
 
             if i % 1 == 0:
@@ -487,14 +487,14 @@ def train_rca_gan(train_loader, val_loader, num_epochs=1,
                 real_data = gt_images
                 fake_data = history_buffer.push_and_pop(gen_clean.detach())
                 d_loss = multimodal_loss.adversarial_loss.discriminator_loss(real_data, fake_data)
-                d_loss.backward()
+                d_loss.backward(retain_graph=True)
                 optimizer_D.step()
 
             for _ in range(g_steps):
                 optimizer_G.zero_grad()
                 fake_data = gen_clean
                 g_loss = multimodal_loss(fake_data, gt_images, degraded_images)
-                g_loss.backward()
+                g_loss.backward(retain_graph=True)
                 optimizer_G.step()
 
             adjust_learning_rates(optimizer_G, optimizer_D, g_loss.item(), d_loss.item())
