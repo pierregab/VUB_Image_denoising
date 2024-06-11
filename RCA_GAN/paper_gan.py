@@ -6,6 +6,7 @@ import torch.optim as optim
 from torch.utils.tensorboard import SummaryWriter
 import torchvision
 import numpy as np
+import optuna
 
 # Define the ChannelAttention class
 class ChannelAttention(nn.Module):
@@ -384,13 +385,13 @@ def adjust_learning_rates(optimizer_G, optimizer_D, g_loss, d_loss, base_lr=1e-4
         for param_group in optimizer_D.param_groups:
             param_group['lr'] = base_lr
 
-# Training function
 def train_rca_gan(train_loader, val_loader, num_epochs=1,
                     lambda_perceptual=1.0, lambda_content=0.01, lambda_texture=0.001, lambda_adversarial=1.0,
                     lr_G=1e-3, lr_D=1e-6, betas_G=(0.5, 0.999), betas_D=(0.9, 0.999),
                     init_type='normal', log_dir='runs/paper_gan', use_tensorboard=True,
-                    debug=False, device=torch.device("cuda" if torch.cuda.is_available() else "mps")):
-    
+                    debug=False, device=torch.device("cuda" if torch.cuda.is_available() else "mps"),
+                    early_stopping_patience=None, trial=None):
+
     # Initialize the models
     in_channels = 1
     out_channels = 1
@@ -414,6 +415,8 @@ def train_rca_gan(train_loader, val_loader, num_epochs=1,
     scheduler_D = optim.lr_scheduler.StepLR(optimizer_D, step_size=10, gamma=0.5)
 
     global_step = 0
+    best_val_loss = float('inf')
+    epochs_no_improve = 0
 
     for epoch in range(num_epochs):
         for i, (degraded_images, gt_images) in enumerate(train_loader):
@@ -434,8 +437,6 @@ def train_rca_gan(train_loader, val_loader, num_epochs=1,
             g_loss = multimodal_loss(gen_clean, gt_images, degraded_images)
             g_loss.backward()
             optimizer_G.step()
-
-            # adjust_learning_rates(optimizer_G, optimizer_D, g_loss.item(), d_loss.item())
 
             if i % 1 == 0:
                 print(f"[Epoch {epoch}/{num_epochs}] [Batch {i}/{len(train_loader)}] [D loss: {d_loss.item()}] [G loss: {g_loss.item()}]")
@@ -459,7 +460,7 @@ def train_rca_gan(train_loader, val_loader, num_epochs=1,
                 val_loss += multimodal_loss(gen_clean, gt_images, degraded_images).item()
         
         val_loss /= len(val_loader)
-        
+
         if use_tensorboard:
             writer.add_scalar('Loss/Validation', val_loss, epoch)
 
@@ -490,6 +491,23 @@ def train_rca_gan(train_loader, val_loader, num_epochs=1,
 
         scheduler_G.step()
         scheduler_D.step()
+
+        # Early stopping
+        if val_loss < best_val_loss:
+            best_val_loss = val_loss
+            epochs_no_improve = 0
+        else:
+            epochs_no_improve += 1
+
+        if early_stopping_patience is not None and epochs_no_improve >= early_stopping_patience:
+            print(f"Early stopping triggered at epoch {epoch+1}")
+            break
+
+        # Optuna pruning
+        if trial is not None:
+            trial.report(val_loss, epoch)
+            if trial.should_prune():
+                raise optuna.TrialPruned()
 
         if (epoch + 1) % 10 == 0:
             torch.save(generator.state_dict(), f"{log_dir}/generator_epoch_{epoch+1}.pth")
