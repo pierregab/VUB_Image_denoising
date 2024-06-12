@@ -249,7 +249,7 @@ class PerceptualLoss(nn.Module):
             img2 = img2.repeat(1, 3, 1, 1)
         f1 = self.feature_extractor(img1)
         f2 = self.feature_extractor(img2)
-        return F.mse_loss(f1, f2)
+        return torch.norm(f1 - f2, p=2) ** 2  # L2 norm squared
 
 # Define the TextureLoss class
 class TextureLoss(nn.Module):
@@ -262,12 +262,13 @@ class TextureLoss(nn.Module):
     def forward(self, img1, img2):
         G1 = self.gram_matrix(img1)
         G2 = self.gram_matrix(img2)
-        return F.mse_loss(G1, G2)
+        return torch.norm(G1 - G2, p=2) ** 2  # L2 norm squared
 
 # Define the ContentLoss class
 class ContentLoss(nn.Module):
     def forward(self, img1, img2):
-        return F.mse_loss(img1, img2)
+        epsilon = 1e-8  # small constant to prevent division by zero
+        return torch.sqrt(torch.norm(img1 - img2, p=1) ** 2 + epsilon)  # L1 norm with small constant added
 
 # Define the WGAN_GP_Loss class
 class WGAN_GP_Loss(nn.Module):
