@@ -1,17 +1,15 @@
-import os
 import torch
 from torchvision import transforms
 from torch.utils.data import DataLoader, random_split
 import matplotlib.pyplot as plt
 from dataset_creation.custom_dataset import CustomDataset  # Ensure custom_dataset.py is in the same directory or in your PYTHONPATH
 
-def load_data(gt_folder, degraded_folder, batch_size=4, num_workers=4, validation_split=0.2, augment=False, dataset_percentage=1.0):
+def load_data(image_folder, batch_size=4, num_workers=4, validation_split=0.2, augment=False, dataset_percentage=1.0):
     """
     Load and preprocess the dataset, returning training and validation DataLoaders.
 
     Parameters:
-    - gt_folder (str): Path to the folder containing ground truth images.
-    - degraded_folder (str): Path to the folder containing degraded images.
+    - image_folder (str): Path to the folder containing images.
     - batch_size (int): Number of samples per batch.
     - num_workers (int): Number of worker processes for data loading.
     - validation_split (float): Fraction of the dataset to use for validation.
@@ -40,7 +38,7 @@ def load_data(gt_folder, degraded_folder, batch_size=4, num_workers=4, validatio
     # Choose transform based on the augment parameter
     transform = augmentation_transform if augment else basic_transform
 
-    dataset = CustomDataset(gt_folder, degraded_folder, transform=transform)
+    dataset = CustomDataset(image_folder, transform=transform)
 
     # Determine the size of the dataset to use
     total_size = len(dataset)
