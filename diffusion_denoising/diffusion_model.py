@@ -7,6 +7,7 @@ import psutil
 import subprocess
 from torch.utils.tensorboard import SummaryWriter
 from torchvision.utils import make_grid
+from datetime import datetime
 
 # Assuming your script is in RCA_GAN and the project root is one level up
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
@@ -102,8 +103,10 @@ unet = UNet().to(device)
 model = DiffusionModel(unet).to(device)
 optimizer = optim.Adam(model.parameters(), lr=2e-4, betas=(0.9, 0.999))
 
-# TensorBoard writer
-writer = SummaryWriter(log_dir="runs/diffusion")
+# TensorBoard writer - unique log directory
+current_time = datetime.now().strftime("%Y%m%d-%H%M%S")
+log_dir = os.path.join("runs", "diffusion", current_time)
+writer = SummaryWriter(log_dir=log_dir)
 
 def denormalize(tensor):
     return tensor * 0.5 + 0.5
@@ -133,28 +136,28 @@ def train_model(model, train_loader, optimizer, num_epochs=10):
             loss = train_step(model, clean_images, noisy_images, optimizer)
             print_memory_stats("After train_step")
             print(f"Epoch [{epoch + 1}/{num_epochs}], Batch [{batch_idx + 1}/{len(train_loader)}], Loss: {loss:.4f}")
-        
-        # Save and visualize images in TensorBoard
-        model.eval()
-        with torch.no_grad():
-            for batch_idx, (clean_images, noisy_images) in enumerate(train_loader):
-                clean_images, noisy_images = clean_images.to(device), noisy_images.to(device)
-                denoised_images = model(clean_images, noisy_images, model.timesteps)
-                
-                clean_images = denormalize(clean_images.cpu())
-                noisy_images = denormalize(noisy_images.cpu())
-                denoised_images = denormalize(denoised_images.cpu())
-                
-                grid_clean = make_grid(clean_images, nrow=4, normalize=True)
-                grid_noisy = make_grid(noisy_images, nrow=4, normalize=True)
-                grid_denoised = make_grid(denoised_images, nrow=4, normalize=True)
-                
-                writer.add_image(f'Epoch_{epoch + 1}/Clean Images', grid_clean, epoch + 1)
-                writer.add_image(f'Epoch_{epoch + 1}/Noisy Images', grid_noisy, epoch + 1)
-                writer.add_image(f'Epoch_{epoch + 1}/Denoised Images', grid_denoised, epoch + 1)
-                
-                if batch_idx >= 0:  # Change this if you want more batches
-                    break
+            
+            # Log loss to TensorBoard
+            writer.add_scalar('Loss/train', loss, epoch * len(train_loader) + batch_idx)
+            
+            # Save and visualize images in TensorBoard
+            if batch_idx % 1 == 0:  # Adjust the frequency as needed
+                model.eval()
+                with torch.no_grad():
+                    clean_images, noisy_images = clean_images.to(device), noisy_images.to(device)
+                    denoised_images = model(clean_images, noisy_images, model.timesteps)
+                    
+                    clean_images = denormalize(clean_images.cpu())
+                    noisy_images = denormalize(noisy_images.cpu())
+                    denoised_images = denormalize(denoised_images.cpu())
+                    
+                    grid_clean = make_grid(clean_images, nrow=4, normalize=True)
+                    grid_noisy = make_grid(noisy_images, nrow=4, normalize=True)
+                    grid_denoised = make_grid(denoised_images, nrow=4, normalize=True)
+                    
+                    writer.add_image(f'Epoch_{epoch + 1}/Clean Images', grid_clean, epoch * len(train_loader) + batch_idx)
+                    writer.add_image(f'Epoch_{epoch + 1}/Noisy Images', grid_noisy, epoch * len(train_loader) + batch_idx)
+                    writer.add_image(f'Epoch_{epoch + 1}/Denoised Images', grid_denoised, epoch * len(train_loader) + batch_idx)
 
 def start_tensorboard(log_dir):
     try:
@@ -169,7 +172,7 @@ if __name__ == "__main__":
         torch.cuda.empty_cache()
 
     # Start TensorBoard
-    start_tensorboard("runs/diffusion")
+    start_tensorboard(log_dir)
     
     # Load data
     image_folder = 'DIV2K_train_HR.nosync'
