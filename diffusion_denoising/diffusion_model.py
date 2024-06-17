@@ -4,6 +4,8 @@ import torch.optim as optim
 import sys
 import os
 import psutil
+from torch.utils.tensorboard import SummaryWriter
+from torchvision.utils import make_grid
 
 # Assuming your script is in RCA_GAN and the project root is one level up
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
@@ -49,22 +51,12 @@ class UNet(nn.Module):
         )
 
     def forward(self, x):
-        if device == torch.device("cuda"):
-            print(f"Input shape: {x.shape}")
         x1 = self.encoder(x)
-        if device == torch.device("cuda"):
-            print(f"After encoder shape: {x1.shape}")
         x2 = self.middle(x1)
-        if device == torch.device("cuda"):
-            print(f"After middle shape: {x2.shape}")
         x2 = nn.functional.interpolate(x2, scale_factor=2, mode='bilinear', align_corners=True)
-        if device == torch.device("cuda"):
-            print(f"After upsample shape: {x2.shape}")
         if x2.size() != x1.size():
             x2 = nn.functional.interpolate(x2, size=x1.size()[2:], mode='bilinear', align_corners=True)
         x3 = self.decoder(torch.cat([x2, x1], dim=1))
-        if device == torch.device("cuda"):
-            print(f"After decoder shape: {x3.shape}")
         return x3
 
 class DiffusionModel(nn.Module):
@@ -109,6 +101,12 @@ unet = UNet().to(device)
 model = DiffusionModel(unet).to(device)
 optimizer = optim.Adam(model.parameters(), lr=2e-4, betas=(0.9, 0.999))
 
+# TensorBoard writer
+writer = SummaryWriter(log_dir="runs/diffusion")
+
+def denormalize(tensor):
+    return tensor * 0.5 + 0.5
+
 # Sample training loop
 def train_step(model, clean_images, noisy_images, optimizer):
     model.train()
@@ -134,6 +132,28 @@ def train_model(model, train_loader, optimizer, num_epochs=10):
             loss = train_step(model, clean_images, noisy_images, optimizer)
             print_memory_stats("After train_step")
             print(f"Epoch [{epoch + 1}/{num_epochs}], Batch [{batch_idx + 1}/{len(train_loader)}], Loss: {loss:.4f}")
+        
+        # Save and visualize images in TensorBoard
+        model.eval()
+        with torch.no_grad():
+            for batch_idx, (clean_images, noisy_images) in enumerate(train_loader):
+                clean_images, noisy_images = clean_images.to(device), noisy_images.to(device)
+                denoised_images = model(clean_images, noisy_images, model.timesteps)
+                
+                clean_images = denormalize(clean_images.cpu())
+                noisy_images = denormalize(noisy_images.cpu())
+                denoised_images = denormalize(denoised_images.cpu())
+                
+                grid_clean = make_grid(clean_images, nrow=4, normalize=True)
+                grid_noisy = make_grid(noisy_images, nrow=4, normalize=True)
+                grid_denoised = make_grid(denoised_images, nrow=4, normalize=True)
+                
+                writer.add_image(f'Epoch_{epoch + 1}/Clean Images', grid_clean, epoch + 1)
+                writer.add_image(f'Epoch_{epoch + 1}/Noisy Images', grid_noisy, epoch + 1)
+                writer.add_image(f'Epoch_{epoch + 1}/Denoised Images', grid_denoised, epoch + 1)
+                
+                if batch_idx >= 0:  # Change this if you want more batches
+                    break
 
 if __name__ == "__main__":
     # Clear any cached memory
@@ -146,3 +166,6 @@ if __name__ == "__main__":
     
     # Train the model
     train_model(model, train_loader, optimizer, num_epochs=10)
+
+    # Close the TensorBoard writer
+    writer.close()
