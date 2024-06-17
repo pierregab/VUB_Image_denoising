@@ -147,4 +147,4 @@ if __name__ == "__main__":
     generator = Generator(in_channels, out_channels)
 
     # Evaluate the model
-    evaluate_model(generator, val_loader, device, num_images=4, model_path="runs/generator_epoch_20.pth")
+    evaluate_model(generator, val_loader, device, num_images=4, model_path="runs/paper_gan/generator_epoch_20.pth")
