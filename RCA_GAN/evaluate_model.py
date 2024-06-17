@@ -7,6 +7,7 @@ from skimage.metrics import structural_similarity as ssim
 import numpy as np
 import os
 import sys
+from scipy.stats import norm
 
 from paper_gan import Generator
 
@@ -14,12 +15,6 @@ project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 sys.path.append(project_root)
 
 from dataset_creation.data_loader import load_data
-
-# Assuming the necessary classes and functions are already defined:
-# - Generator
-# - compute_metrics
-# - evaluate_model
-# - load_data
 
 def compute_metrics(original, processed):
     """
@@ -37,6 +32,27 @@ def compute_metrics(original, processed):
     psnr_value = psnr(original_np, processed_np, data_range=processed_np.max() - processed_np.min())
     ssim_value = ssim(original_np, processed_np, data_range=processed_np.max() - processed_np.min())
     return psnr_value, ssim_value
+
+def plot_gaussian_distribution(data, title, xlabel):
+    """
+    Plot Gaussian distribution of the data.
+
+    Args:
+        data (array-like): Data to plot.
+        title (str): Title of the plot.
+        xlabel (str): Label for the x-axis.
+    """
+    mean, std = norm.fit(data)
+    plt.hist(data, bins=20, density=True, alpha=0.6, color='g', edgecolor='black')
+    xmin, xmax = plt.xlim()
+    x = np.linspace(xmin, xmax, 100)
+    p = norm.pdf(x, mean, std)
+    plt.plot(x, p, 'k', linewidth=2)
+    title = f"{title} - Mean: {mean:.2f}, Std: {std:.2f}"
+    plt.title(title)
+    plt.xlabel(xlabel)
+    plt.ylabel('Frequency')
+    plt.show()
 
 def evaluate_model(model, val_loader, device, num_images=4, model_path="best_denoising_unet_b&w.pth"):
     """
@@ -115,10 +131,19 @@ def evaluate_model(model, val_loader, device, num_images=4, model_path="best_den
     avg_psnr_predicted = np.mean(psnr_predicted_list)
     avg_ssim_predicted = np.mean(ssim_predicted_list)
 
+    # Compute percentage improvement
+    psnr_improvement = ((np.array(psnr_predicted_list) - np.array(psnr_degraded_list)) / np.array(psnr_degraded_list)) * 100
+    ssim_improvement = ((np.array(ssim_predicted_list) - np.array(ssim_degraded_list)) / np.array(ssim_degraded_list)) * 100
+
+    avg_psnr_improvement = np.mean(psnr_improvement)
+    avg_ssim_improvement = np.mean(ssim_improvement)
+
     print(f"Average PSNR of Degraded Images: {avg_psnr_degraded:.2f}")
     print(f"Average SSIM of Degraded Images: {avg_ssim_degraded:.4f}")
     print(f"Average PSNR of Predicted Images: {avg_psnr_predicted:.2f}")
     print(f"Average SSIM of Predicted Images: {avg_ssim_predicted:.4f}")
+    print(f"Average PSNR Improvement: {avg_psnr_improvement:.2f}%")
+    print(f"Average SSIM Improvement: {avg_ssim_improvement:.2f}%")
 
     # Plot comparison of metrics
     fig, ax = plt.subplots(1, 2, figsize=(12, 6))
@@ -132,6 +157,25 @@ def evaluate_model(model, val_loader, device, num_images=4, model_path="best_den
     ax[1].set_ylabel('SSIM')
 
     plt.show()
+
+    # Plot percentage improvement histograms
+    fig, ax = plt.subplots(1, 2, figsize=(12, 6))
+
+    ax[0].hist(psnr_improvement, bins=20, color='blue', edgecolor='black')
+    ax[0].set_title('PSNR Improvement Distribution')
+    ax[0].set_xlabel('PSNR Improvement (%)')
+    ax[0].set_ylabel('Frequency')
+
+    ax[1].hist(ssim_improvement, bins=20, color='blue', edgecolor='black')
+    ax[1].set_title('SSIM Improvement Distribution')
+    ax[1].set_xlabel('SSIM Improvement (%)')
+    ax[1].set_ylabel('Frequency')
+
+    plt.show()
+
+    # Plot Gaussian distribution of improvements
+    plot_gaussian_distribution(psnr_improvement, 'PSNR Improvement Gaussian Distribution', 'PSNR Improvement (%)')
+    plot_gaussian_distribution(ssim_improvement, 'SSIM Improvement Gaussian Distribution', 'SSIM Improvement (%)')
 
 if __name__ == "__main__":
     # Define the device
