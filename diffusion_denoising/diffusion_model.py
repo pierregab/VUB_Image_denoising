@@ -4,6 +4,7 @@ import torch.optim as optim
 import sys
 import os
 import psutil
+import subprocess
 from torch.utils.tensorboard import SummaryWriter
 from torchvision.utils import make_grid
 
@@ -155,10 +156,20 @@ def train_model(model, train_loader, optimizer, num_epochs=10):
                 if batch_idx >= 0:  # Change this if you want more batches
                     break
 
+def start_tensorboard(log_dir):
+    try:
+        subprocess.Popen(['tensorboard', '--logdir', log_dir])
+        print(f"TensorBoard started at http://localhost:6006")
+    except Exception as e:
+        print(f"Failed to start TensorBoard: {e}")
+
 if __name__ == "__main__":
     # Clear any cached memory
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
+
+    # Start TensorBoard
+    start_tensorboard("runs/diffusion")
     
     # Load data
     image_folder = 'DIV2K_train_HR.nosync'
