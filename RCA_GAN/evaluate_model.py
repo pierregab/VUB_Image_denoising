@@ -139,7 +139,7 @@ if __name__ == "__main__":
 
     # Load the dataset using the provided load_data function
     image_folder = 'DIV2K_train_HR.nosync'
-    train_loader, val_loader = load_data(image_folder, batch_size=1, num_workers=8, validation_split=0.2, augment=False, dataset_percentage=0.001)
+    train_loader, val_loader = load_data(image_folder, batch_size=1, num_workers=8, validation_split=0.2, augment=False, dataset_percentage=0.01, only_validation=True)
 
     # Instantiate the model
     in_channels = 1
