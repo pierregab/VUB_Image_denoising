@@ -7,7 +7,7 @@ from torch.utils.tensorboard import SummaryWriter
 import torchvision
 import torchsummary
 from torchviz import make_dot
-from VUB_Image_denoising.RCA_GAN.paper_gan import Generator, Discriminator
+from paper_gan import Generator, Discriminator
 
 def print_model_summary(model, input_size):
     print(f"\nSummary of {model.__class__.__name__}:")
