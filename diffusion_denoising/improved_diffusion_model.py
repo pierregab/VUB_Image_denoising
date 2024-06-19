@@ -7,6 +7,7 @@ import psutil
 import subprocess
 from torch.utils.tensorboard import SummaryWriter
 from torchvision.utils import make_grid
+import torchvision.models as models
 import time
 
 # Assuming your script is in RCA_GAN and the project root is one level up
@@ -87,15 +88,11 @@ class DiffusionModel(nn.Module):
         for t in reversed(range(1, self.timesteps + 1)):
             alpha_t = t / self.timesteps
             alpha_t_prev = (t - 1) / self.timesteps
-            #print_memory_stats(f"Before UNet at timestep {t}")
             x_t_unet = self.unet(x_t)
-            #print_memory_stats(f"After UNet at timestep {t}")
-            #print(f"Size of x_t_unet at timestep {t}: {x_t_unet.size()}")
             x_tilde = (1 - alpha_t) * x_t_unet + alpha_t * noisy_image
             x_tilde_prev_unet = self.unet(x_t)
             x_tilde_prev = (1 - alpha_t_prev) * x_tilde_prev_unet + alpha_t_prev * noisy_image
             x_t = x_t - x_tilde + x_tilde_prev
-            #print_memory_stats(f"After update x_t at timestep {t}")
         return x_t
 
     def forward(self, clean_image, noisy_image, t):
@@ -103,19 +100,73 @@ class DiffusionModel(nn.Module):
         denoised_image = self.improved_sampling(noisy_step_image)
         return denoised_image
 
-def charbonnier_loss(pred, target, epsilon=1e-3):
-    return torch.mean(torch.sqrt((pred - target) ** 2 + epsilon ** 2))
+# Define the PerceptualLoss class
+class PerceptualLoss(nn.Module):
+    def __init__(self, feature_layer=8):
+        super(PerceptualLoss, self).__init__()
+        vgg = models.vgg19(weights=models.VGG19_Weights.IMAGENET1K_V1).features
+        self.feature_extractor = nn.Sequential(*list(vgg.children())[:feature_layer]).eval()
+        for param in self.feature_extractor.parameters():
+            param.requires_grad = False
+
+    def forward(self, img1, img2):
+        if img1.size(1) == 1:  # Convert single-channel to 3-channel
+            img1 = img1.repeat(1, 3, 1, 1)
+            img2 = img2.repeat(1, 3, 1, 1)
+        f1 = self.feature_extractor(img1)
+        f2 = self.feature_extractor(img2)
+        return torch.norm(f1 - f2, p=2) ** 2  # L2 norm squared
+
+# Define the TextureLoss class
+class TextureLoss(nn.Module):
+    def gram_matrix(self, input):
+        a, b, c, d = input.size()  # a=batch size(=1)
+        features = input.view(a * b, c * d)  # resize F_XL into \hat F_XL
+        G = torch.mm(features, features.t())  # compute the gram product
+        return G.div(a * b * c * d)
+
+    def forward(self, img1, img2):
+        G1 = self.gram_matrix(img1)
+        G2 = self.gram_matrix(img2)
+        return torch.norm(G1 - G2, p=2) ** 2  # L2 norm squared
+
+# Define the ContentLoss class
+class ContentLoss(nn.Module):
+    def forward(self, img1, img2):
+        epsilon = 1e-8  # small constant to prevent division by zero
+        return torch.sqrt(torch.norm(img1 - img2, p=1) ** 2 + epsilon)  # L1 norm with small constant added
+
+# Define the MultimodalLoss class
+class MultimodalLoss(nn.Module):
+    def __init__(self, lambda1, lambda2, lambda3):
+        super(MultimodalLoss, self).__init__()
+        self.perceptual_loss = PerceptualLoss()
+        self.content_loss = ContentLoss()
+        self.texture_loss = TextureLoss()
+        self.lambda1 = lambda1  # Weight for perceptual loss
+        self.lambda2 = lambda2  # Weight for content loss
+        self.lambda3 = lambda3  # Weight for texture loss
+
+    def forward(self, generated_images, real_images):
+        l_percep = self.perceptual_loss(real_images, generated_images)
+        l_content = self.content_loss(generated_images, real_images)
+        l_texture = self.texture_loss(generated_images, real_images)
+        total_loss = self.lambda1 * l_percep + self.lambda2 * l_content + self.lambda3 * l_texture
+        return total_loss, l_percep, l_content, l_texture
 
 # Define the model and optimizer
 unet = UNet_S().to(device)
 model = DiffusionModel(unet).to(device)
 optimizer = optim.Adam(model.parameters(), lr=2e-4, betas=(0.9, 0.999))
 
+# Instantiate the multimodal loss
+multimodal_loss = MultimodalLoss(lambda1=1.0, lambda2=0.01, lambda3=0.001)
+
 def denormalize(tensor):
     return tensor * 0.5 + 0.5
 
 # Sample training loop
-def train_step(model, clean_images, noisy_images, optimizer):
+def train_step(model, clean_images, noisy_images, optimizer, loss_fn, writer, epoch, batch_idx):
     model.train()
     optimizer.zero_grad()
     
@@ -123,20 +174,23 @@ def train_step(model, clean_images, noisy_images, optimizer):
     with torch.no_grad():
         clean_images, noisy_images = clean_images.to(device), noisy_images.to(device)
     denoised_images = model(clean_images, noisy_images, timesteps)
-    loss = charbonnier_loss(denoised_images, clean_images)
-    loss.backward()
+    total_loss, l_percep, l_content, l_texture = loss_fn(denoised_images, clean_images)
+    total_loss.backward()
     optimizer.step()
     
-    return loss.item()
+    writer.add_scalar('Loss/total', total_loss.item(), epoch * len(train_loader) + batch_idx)
+    writer.add_scalar('Loss/perceptual', l_percep.item(), epoch * len(train_loader) + batch_idx)
+    writer.add_scalar('Loss/content', l_content.item(), epoch * len(train_loader) + batch_idx)
+    writer.add_scalar('Loss/texture', l_texture.item(), epoch * len(train_loader) + batch_idx)
+    
+    return total_loss.item()
 
-def train_model(model, train_loader, optimizer, writer, num_epochs=10):
+def train_model(model, train_loader, optimizer, writer, loss_fn, num_epochs=10):
     for epoch in range(num_epochs):
         for batch_idx, (noisy_images, clean_images) in enumerate(train_loader):
-            loss = train_step(model, clean_images, noisy_images, optimizer)
+            loss = train_step(model, clean_images, noisy_images, optimizer, loss_fn, writer, epoch, batch_idx)
             print(f"Epoch [{epoch + 1}/{num_epochs}], Batch [{batch_idx + 1}/{len(train_loader)}], Loss: {loss:.4f}")
             
-            writer.add_scalar('Loss/train', loss, epoch * len(train_loader) + batch_idx)
-        
         model.eval()
         with torch.no_grad():
             for batch_idx, (noisy_images, clean_images) in enumerate(train_loader):
@@ -160,7 +214,6 @@ def train_model(model, train_loader, optimizer, writer, num_epochs=10):
         
         writer.flush()
 
-
 def start_tensorboard(log_dir):
     try:
         subprocess.Popen(['tensorboard', '--logdir', log_dir])
@@ -180,5 +233,5 @@ if __name__ == "__main__":
     
     image_folder = 'DIV2K_train_HR.nosync'
     train_loader, val_loader = load_data(image_folder, batch_size=1, augment=False, dataset_percentage=0.001)
-    train_model(model, train_loader, optimizer, writer, num_epochs=10)
+    train_model(model, train_loader, optimizer, writer, multimodal_loss, num_epochs=10)
     writer.close()
