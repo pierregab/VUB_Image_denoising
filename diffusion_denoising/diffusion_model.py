@@ -27,42 +27,52 @@ def print_memory_stats(prefix=""):
         print(f"{prefix} System Memory Used: {memory_info.used / 1024 ** 3:.2f} GB")
         print(f"{prefix} System Memory Available: {memory_info.available / 1024 ** 3:.2f} GB")
 
-class UNet(nn.Module):
+class UNet_S(nn.Module):
     def __init__(self):
-        super(UNet, self).__init__()
-        self.encoder = nn.Sequential(
-            nn.Conv2d(1, 16, kernel_size=3, padding=1),  # Reduce channels to 16
-            nn.ReLU(inplace=True),
-            nn.Conv2d(16, 16, kernel_size=3, padding=1),
-            nn.ReLU(inplace=True),
-            nn.MaxPool2d(kernel_size=2)
-        )
-        self.middle = nn.Sequential(
-            nn.Conv2d(16, 32, kernel_size=3, padding=1),  # Reduce channels to 32
-            nn.ReLU(inplace=True),
-            nn.Conv2d(32, 32, kernel_size=3, padding=1),
-            nn.ReLU(inplace=True)
-        )
-        self.upsample = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True)
-        self.decoder = nn.Sequential(
-            nn.Conv2d(32 + 16, 16, kernel_size=3, padding=1),  # Adjusted for concatenated channels
-            nn.ReLU(inplace=True),
-            nn.Conv2d(16, 16, kernel_size=3, padding=1),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(16, 1, kernel_size=3, padding=1)  # Change output channels to 1 for grayscale
-        )
+        super(UNet_S, self).__init__()
+        self.enc1 = self.conv_block(1, 64)
+        self.enc2 = self.conv_block(64, 128)
+        self.enc3 = self.conv_block(128, 256)
+        self.enc4 = self.conv_block(256, 512)
+        self.pool = nn.MaxPool2d(2)
+        self.upconv4 = self.upconv(512, 256)
+        self.upconv3 = self.upconv(256, 128)
+        self.upconv2 = self.upconv(128, 64)
+        self.dec4 = self.conv_block(512, 256)
+        self.dec3 = self.conv_block(256, 128)
+        self.dec2 = self.conv_block(128, 64)
+        self.dec1 = self.conv_block(64, 1, final_layer=True)
+
+    def conv_block(self, in_channels, out_channels, final_layer=False):
+        if final_layer:
+            return nn.Sequential(
+                nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1),
+                nn.Tanh()
+            )
+        else:
+            return nn.Sequential(
+                nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1),
+                nn.ReLU(inplace=True),
+                nn.Conv2d(out_channels, out_channels, kernel_size=3, padding=1),
+                nn.ReLU(inplace=True)
+            )
+
+    def upconv(self, in_channels, out_channels):
+        return nn.ConvTranspose2d(in_channels, out_channels, kernel_size=2, stride=2)
 
     def forward(self, x):
-        x1 = self.encoder(x)
-        x2 = self.middle(x1)
-        x2 = nn.functional.interpolate(x2, scale_factor=2, mode='bilinear', align_corners=True)
-        if x2.size() != x1.size():
-            x2 = nn.functional.interpolate(x2, size=x1.size()[2:], mode='bilinear', align_corners=True)
-        x3 = self.decoder(torch.cat([x2, x1], dim=1))
-        return x3
+        enc1 = self.enc1(x)
+        enc2 = self.enc2(self.pool(enc1))
+        enc3 = self.enc3(self.pool(enc2))
+        enc4 = self.enc4(self.pool(enc3))
+        dec4 = self.dec4(torch.cat((self.upconv4(enc4), enc3), dim=1))
+        dec3 = self.dec3(torch.cat((self.upconv3(dec4), enc2), dim=1))
+        dec2 = self.dec2(torch.cat((self.upconv2(dec3), enc1), dim=1))
+        dec1 = self.dec1(dec2)
+        return dec1
 
 class DiffusionModel(nn.Module):
-    def __init__(self, unet, timesteps=70):
+    def __init__(self, unet, timesteps=50):
         super(DiffusionModel, self).__init__()
         self.unet = unet
         self.timesteps = timesteps
@@ -77,17 +87,15 @@ class DiffusionModel(nn.Module):
         for t in reversed(range(1, self.timesteps + 1)):
             alpha_t = t / self.timesteps
             alpha_t_prev = (t - 1) / self.timesteps
-            x_tilde = (1 - alpha_t) * self.unet(x_t)
-            if x_tilde.size() != noisy_image.size():
-                x_tilde = nn.functional.interpolate(x_tilde, size=noisy_image.size()[2:], mode='bilinear', align_corners=True)
-            x_tilde += alpha_t * noisy_image
-            
-            x_tilde_prev = (1 - alpha_t_prev) * self.unet(x_t)
-            if x_tilde_prev.size() != noisy_image.size():
-                x_tilde_prev = nn.functional.interpolate(x_tilde_prev, size=noisy_image.size()[2:], mode='bilinear', align_corners=True)
-            x_tilde_prev += alpha_t_prev * noisy_image
-            
+            print_memory_stats(f"Before UNet at timestep {t}")
+            x_t_unet = self.unet(x_t)
+            print_memory_stats(f"After UNet at timestep {t}")
+            print(f"Size of x_t_unet at timestep {t}: {x_t_unet.size()}")
+            x_tilde = (1 - alpha_t) * x_t_unet + alpha_t * noisy_image
+            x_tilde_prev_unet = self.unet(x_t)
+            x_tilde_prev = (1 - alpha_t_prev) * x_tilde_prev_unet + alpha_t_prev * noisy_image
             x_t = x_t - x_tilde + x_tilde_prev
+            print_memory_stats(f"After update x_t at timestep {t}")
         return x_t
 
     def forward(self, clean_image, noisy_image, t):
@@ -99,7 +107,7 @@ def charbonnier_loss(pred, target, epsilon=1e-3):
     return torch.mean(torch.sqrt((pred - target) ** 2 + epsilon ** 2))
 
 # Define the model and optimizer
-unet = UNet().to(device)
+unet = UNet_S().to(device)
 model = DiffusionModel(unet).to(device)
 optimizer = optim.Adam(model.parameters(), lr=2e-4, betas=(0.9, 0.999))
 
@@ -112,17 +120,14 @@ def train_step(model, clean_images, noisy_images, optimizer):
     optimizer.zero_grad()
     
     timesteps = model.timesteps
-    total_loss = 0
-    for t in range(timesteps):
-        with torch.no_grad():  # Temporarily use no_grad to avoid storing unnecessary gradients
-            clean_images, noisy_images = clean_images.to(device), noisy_images.to(device)
-        denoised_images = model(clean_images, noisy_images, t)
-        loss = charbonnier_loss(denoised_images, clean_images)
-        loss.backward()
-        optimizer.step()
-        total_loss += loss.item()
+    with torch.no_grad():
+        clean_images, noisy_images = clean_images.to(device), noisy_images.to(device)
+    denoised_images = model(clean_images, noisy_images, timesteps)
+    loss = charbonnier_loss(denoised_images, clean_images)
+    loss.backward()
+    optimizer.step()
     
-    return total_loss / timesteps
+    return loss.item()
 
 def train_model(model, train_loader, optimizer, writer, num_epochs=10):
     for epoch in range(num_epochs):
@@ -134,7 +139,6 @@ def train_model(model, train_loader, optimizer, writer, num_epochs=10):
             
             writer.add_scalar('Loss/train', loss, epoch * len(train_loader) + batch_idx)
         
-        # Save and visualize images in TensorBoard
         model.eval()
         with torch.no_grad():
             for batch_idx, (clean_images, noisy_images) in enumerate(train_loader):
@@ -156,7 +160,6 @@ def train_model(model, train_loader, optimizer, writer, num_epochs=10):
                 if batch_idx >= 0:  # Change this if you want more batches
                     break
         
-        # Flush the writer
         writer.flush()
 
 def start_tensorboard(log_dir):
@@ -167,25 +170,16 @@ def start_tensorboard(log_dir):
         print(f"Failed to start TensorBoard: {e}")
 
 if __name__ == "__main__":
-    # Clear any cached memory
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
+    if torch.backends.mps.is_available():
+        torch.mps.empty_cache()
 
-    # Create a unique log directory
     log_dir = os.path.join("runs", "diffusion", f"{time.strftime('%Y%m%d-%H%M%S')}")
-    
-    # TensorBoard writer
     writer = SummaryWriter(log_dir=log_dir)
-    
-    # Start TensorBoard
     start_tensorboard(log_dir)
     
-    # Load data
     image_folder = 'DIV2K_train_HR.nosync'
     train_loader, val_loader = load_data(image_folder, batch_size=1, augment=False, dataset_percentage=0.001)
-    
-    # Train the model
     train_model(model, train_loader, optimizer, writer, num_epochs=10)
-
-    # Close the TensorBoard writer
     writer.close()
