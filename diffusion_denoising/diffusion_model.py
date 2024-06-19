@@ -94,11 +94,15 @@ class DiffusionModel(nn.Module):
         for t in reversed(range(1, self.timesteps + 1)):
             alpha_t = t / self.timesteps
             alpha_t_prev = (t - 1) / self.timesteps
+            #print_memory_stats(f"Before UNet at timestep {t}")
             x_t_unet = self.unet(x_t)
+            #print_memory_stats(f"After UNet at timestep {t}")
+            #print(f"Size of x_t_unet at timestep {t}: {x_t_unet.size()}")
             x_tilde = (1 - alpha_t) * x_t_unet + alpha_t * noisy_image
             x_tilde_prev_unet = self.unet(x_t)
             x_tilde_prev = (1 - alpha_t_prev) * x_tilde_prev_unet + alpha_t_prev * noisy_image
             x_t = x_t - x_tilde + x_tilde_prev
+            #print_memory_stats(f"After update x_t at timestep {t}")
         return x_t
 
     def forward(self, clean_image, noisy_image, t):
@@ -118,7 +122,7 @@ def denormalize(tensor):
     return tensor * 0.5 + 0.5
 
 # Sample training loop
-def train_step(model, clean_images, noisy_images, optimizer, accumulation_steps, batch_idx):
+def train_step(model, clean_images, noisy_images, optimizer):
     model.train()
     optimizer.zero_grad(set_to_none=True)
     
@@ -129,19 +133,17 @@ def train_step(model, clean_images, noisy_images, optimizer, accumulation_steps,
         denoised_images = model(clean_images, noisy_images, timesteps)
         loss = charbonnier_loss(denoised_images, clean_images)
     
-    scaler.scale(loss / accumulation_steps).backward()  # Normalize loss
-    if (batch_idx + 1) % accumulation_steps == 0:
-        scaler.step(optimizer)
-        scaler.update()
-        optimizer.zero_grad(set_to_none=True)
+    scaler.scale(loss).backward()
+    scaler.step(optimizer)
+    scaler.update()
     
     return loss.item()
 
-def train_model(model, train_loader, optimizer, writer, num_epochs=10, accumulation_steps=4):
+def train_model(model, train_loader, optimizer, writer, num_epochs=10):
     for epoch in range(num_epochs):
         model.train()
         for batch_idx, (noisy_images, clean_images) in enumerate(train_loader):
-            loss = train_step(model, clean_images, noisy_images, optimizer, accumulation_steps, batch_idx)
+            loss = train_step(model, clean_images, noisy_images, optimizer)
             print(f"Epoch [{epoch + 1}/{num_epochs}], Batch [{batch_idx + 1}/{len(train_loader)}], Loss: {loss:.4f}")
             writer.add_scalar('Loss/train', loss, epoch * len(train_loader) + batch_idx)
 
@@ -167,6 +169,7 @@ def train_model(model, train_loader, optimizer, writer, num_epochs=10, accumulat
                 
         writer.flush()
 
+
 def start_tensorboard(log_dir):
     try:
         subprocess.Popen(['tensorboard', '--logdir', log_dir])
@@ -177,12 +180,8 @@ def start_tensorboard(log_dir):
 if __name__ == "__main__":
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
-        print("Using CUDA with mixed precision training.")
-    elif torch.backends.mps.is_available():
+    if torch.backends.mps.is_available():
         torch.mps.empty_cache()
-        print("Using Apple MPS backend without mixed precision training.")
-    else:
-        print("Using CPU without mixed precision training.")
 
     log_dir = os.path.join("runs", "diffusion")
     writer = SummaryWriter(log_dir=log_dir)
@@ -190,12 +189,5 @@ if __name__ == "__main__":
     
     image_folder = 'DIV2K_train_HR.nosync'
     train_loader, val_loader = load_data(image_folder, batch_size=1, augment=False, dataset_percentage=0.001)
-    
-    for epoch in range(10):
-        train_model(model, train_loader, optimizer, writer, num_epochs=1, accumulation_steps=4)
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-        elif torch.backends.mps.is_available():
-            torch.mps.empty_cache()
-    
+    train_model(model, train_loader, optimizer, writer, num_epochs=10)
     writer.close()
