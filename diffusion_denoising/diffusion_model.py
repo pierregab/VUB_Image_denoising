@@ -79,7 +79,7 @@ class UNet_S(nn.Module):
         return dec1
 
 class DiffusionModel(nn.Module):
-    def __init__(self, unet, timesteps=50):
+    def __init__(self, unet, timesteps=20):
         super(DiffusionModel, self).__init__()
         self.unet = unet
         self.timesteps = timesteps
@@ -169,7 +169,6 @@ def train_model(model, train_loader, optimizer, writer, num_epochs=10):
                 
         writer.flush()
 
-
 def start_tensorboard(log_dir):
     try:
         subprocess.Popen(['tensorboard', '--logdir', log_dir])
@@ -180,8 +179,12 @@ def start_tensorboard(log_dir):
 if __name__ == "__main__":
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
-    if torch.backends.mps.is_available():
+        print("Using CUDA with mixed precision training.")
+    elif torch.backends.mps.is_available():
         torch.mps.empty_cache()
+        print("Using Apple MPS backend without mixed precision training.")
+    else:
+        print("Using CPU without mixed precision training.")
 
     log_dir = os.path.join("runs", "diffusion")
     writer = SummaryWriter(log_dir=log_dir)
