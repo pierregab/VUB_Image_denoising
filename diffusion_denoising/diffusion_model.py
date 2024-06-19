@@ -72,7 +72,7 @@ class UNet_S(nn.Module):
         return dec1
 
 class DiffusionModel(nn.Module):
-    def __init__(self, unet, timesteps=50):
+    def __init__(self, unet, timesteps=20):
         super(DiffusionModel, self).__init__()
         self.unet = unet
         self.timesteps = timesteps
