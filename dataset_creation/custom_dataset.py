@@ -3,16 +3,13 @@ import torch
 import random
 import numpy as np
 from PIL import Image
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset, DataLoader, random_split
 from torchvision import transforms
+import matplotlib.pyplot as plt
 
 class CustomDataset(Dataset):
     """
     A custom dataset class for loading high-resolution images, extracting non-overlapping patches, and generating noisy versions.
-
-    Attributes:
-        patch_pairs (list): List of tuples containing file paths and coordinates for each patch.
-        transform (callable, optional): Optional transform to be applied on a sample.
     """
 
     def __init__(self, image_folder, transform=None):
@@ -29,12 +26,6 @@ class CustomDataset(Dataset):
     def _get_image_paths(self, folder):
         """
         Retrieves the paths of all images in the specified folder.
-
-        Args:
-            folder (str): Directory to search for image files.
-
-        Returns:
-            list: Sorted list of image file paths.
         """
         image_extensions = ('png', 'jpg', 'jpeg')
         image_paths = sorted(
@@ -45,9 +36,6 @@ class CustomDataset(Dataset):
     def _extract_patches(self):
         """
         Extracts all non-overlapping 256x256 patches from each image.
-
-        Returns:
-            list: List of tuples containing image path and patch coordinates.
         """
         patch_pairs = []
         patch_size = 256
@@ -68,12 +56,6 @@ class CustomDataset(Dataset):
     def __getitem__(self, idx):
         """
         Generates one sample of data.
-
-        Args:
-            idx (int): Index of the sample to retrieve.
-
-        Returns:
-            tuple: (degraded_image, gt_image) where both are tensors.
         """
         noise_idx = idx % len(self.noise_levels)
         patch_idx = idx // len(self.noise_levels)
@@ -91,7 +73,11 @@ class CustomDataset(Dataset):
         noisy_patch = Image.fromarray(noisy_patch)
 
         if self.transform:
+            # Ensure the same random seed for both transformations
+            seed = random.randint(0, 2**32)
+            random.seed(seed)
             gt_patch = self.transform(gt_patch)
+            random.seed(seed)
             noisy_patch = self.transform(noisy_patch)
 
         return noisy_patch, gt_patch
