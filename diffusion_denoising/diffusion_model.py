@@ -8,11 +8,6 @@ import subprocess
 from torch.utils.tensorboard import SummaryWriter
 from torchvision.utils import make_grid
 import time
-import random
-
-from torch.cuda.amp import GradScaler, autocast
-
-scaler = GradScaler()
 
 # Assuming your script is in RCA_GAN and the project root is one level up
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
@@ -57,10 +52,8 @@ class UNet_S(nn.Module):
         else:
             return nn.Sequential(
                 nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1),
-                nn.BatchNorm2d(out_channels),
                 nn.ReLU(inplace=True),
                 nn.Conv2d(out_channels, out_channels, kernel_size=3, padding=1),
-                nn.BatchNorm2d(out_channels),
                 nn.ReLU(inplace=True)
             )
 
@@ -79,7 +72,7 @@ class UNet_S(nn.Module):
         return dec1
 
 class DiffusionModel(nn.Module):
-    def __init__(self, unet, timesteps=20):
+    def __init__(self, unet, timesteps=50):
         super(DiffusionModel, self).__init__()
         self.unet = unet
         self.timesteps = timesteps
@@ -124,49 +117,47 @@ def denormalize(tensor):
 # Sample training loop
 def train_step(model, clean_images, noisy_images, optimizer):
     model.train()
-    optimizer.zero_grad(set_to_none=True)
+    optimizer.zero_grad()
     
     timesteps = model.timesteps
-    clean_images, noisy_images = clean_images.to(device), noisy_images.to(device)
-    
-    with autocast():
-        denoised_images = model(clean_images, noisy_images, timesteps)
-        loss = charbonnier_loss(denoised_images, clean_images)
-    
-    scaler.scale(loss).backward()
-    scaler.step(optimizer)
-    scaler.update()
+    with torch.no_grad():
+        clean_images, noisy_images = clean_images.to(device), noisy_images.to(device)
+    denoised_images = model(clean_images, noisy_images, timesteps)
+    loss = charbonnier_loss(denoised_images, clean_images)
+    loss.backward()
+    optimizer.step()
     
     return loss.item()
 
 def train_model(model, train_loader, optimizer, writer, num_epochs=10):
     for epoch in range(num_epochs):
-        model.train()
         for batch_idx, (noisy_images, clean_images) in enumerate(train_loader):
             loss = train_step(model, clean_images, noisy_images, optimizer)
             print(f"Epoch [{epoch + 1}/{num_epochs}], Batch [{batch_idx + 1}/{len(train_loader)}], Loss: {loss:.4f}")
+            
             writer.add_scalar('Loss/train', loss, epoch * len(train_loader) + batch_idx)
-
+        
         model.eval()
         with torch.no_grad():
-            # Log a random subset of validation images
-            val_batches = random.sample(list(train_loader), min(5, len(train_loader)))
-            for batch_idx, (noisy_images, clean_images) in enumerate(val_batches):
+            for batch_idx, (noisy_images, clean_images) in enumerate(train_loader):
                 clean_images, noisy_images = clean_images.to(device), noisy_images.to(device)
                 denoised_images = model(clean_images, noisy_images, model.timesteps)
-
+                
                 clean_images = denormalize(clean_images.cpu())
                 noisy_images = denormalize(noisy_images.cpu())
                 denoised_images = denormalize(denoised_images.cpu())
-
+                
                 grid_clean = make_grid(clean_images, nrow=4, normalize=True)
                 grid_noisy = make_grid(noisy_images, nrow=4, normalize=True)
                 grid_denoised = make_grid(denoised_images, nrow=4, normalize=True)
-
+                
                 writer.add_image(f'Epoch_{epoch + 1}/Clean Images', grid_clean, epoch + 1)
                 writer.add_image(f'Epoch_{epoch + 1}/Noisy Images', grid_noisy, epoch + 1)
                 writer.add_image(f'Epoch_{epoch + 1}/Denoised Images', grid_denoised, epoch + 1)
                 
+                if batch_idx >= 0:  # Change this if you want more batches
+                    break
+        
         writer.flush()
 
 
