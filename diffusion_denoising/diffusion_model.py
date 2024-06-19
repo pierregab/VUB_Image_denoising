@@ -87,15 +87,15 @@ class DiffusionModel(nn.Module):
         for t in reversed(range(1, self.timesteps + 1)):
             alpha_t = t / self.timesteps
             alpha_t_prev = (t - 1) / self.timesteps
-            print_memory_stats(f"Before UNet at timestep {t}")
+            #print_memory_stats(f"Before UNet at timestep {t}")
             x_t_unet = self.unet(x_t)
-            print_memory_stats(f"After UNet at timestep {t}")
+            #print_memory_stats(f"After UNet at timestep {t}")
             print(f"Size of x_t_unet at timestep {t}: {x_t_unet.size()}")
             x_tilde = (1 - alpha_t) * x_t_unet + alpha_t * noisy_image
             x_tilde_prev_unet = self.unet(x_t)
             x_tilde_prev = (1 - alpha_t_prev) * x_tilde_prev_unet + alpha_t_prev * noisy_image
             x_t = x_t - x_tilde + x_tilde_prev
-            print_memory_stats(f"After update x_t at timestep {t}")
+            #print_memory_stats(f"After update x_t at timestep {t}")
         return x_t
 
     def forward(self, clean_image, noisy_image, t):
@@ -131,17 +131,15 @@ def train_step(model, clean_images, noisy_images, optimizer):
 
 def train_model(model, train_loader, optimizer, writer, num_epochs=10):
     for epoch in range(num_epochs):
-        for batch_idx, (clean_images, noisy_images) in enumerate(train_loader):
-            print_memory_stats("Before train_step")
+        for batch_idx, (noisy_images, clean_images) in enumerate(train_loader):
             loss = train_step(model, clean_images, noisy_images, optimizer)
-            print_memory_stats("After train_step")
             print(f"Epoch [{epoch + 1}/{num_epochs}], Batch [{batch_idx + 1}/{len(train_loader)}], Loss: {loss:.4f}")
             
             writer.add_scalar('Loss/train', loss, epoch * len(train_loader) + batch_idx)
         
         model.eval()
         with torch.no_grad():
-            for batch_idx, (clean_images, noisy_images) in enumerate(train_loader):
+            for batch_idx, (noisy_images, clean_images) in enumerate(train_loader):
                 clean_images, noisy_images = clean_images.to(device), noisy_images.to(device)
                 denoised_images = model(clean_images, noisy_images, model.timesteps)
                 
@@ -162,6 +160,7 @@ def train_model(model, train_loader, optimizer, writer, num_epochs=10):
         
         writer.flush()
 
+
 def start_tensorboard(log_dir):
     try:
         subprocess.Popen(['tensorboard', '--logdir', log_dir])
@@ -175,7 +174,7 @@ if __name__ == "__main__":
     if torch.backends.mps.is_available():
         torch.mps.empty_cache()
 
-    log_dir = os.path.join("runs", "diffusion", f"{time.strftime('%Y%m%d-%H%M%S')}")
+    log_dir = os.path.join("runs", "diffusion")
     writer = SummaryWriter(log_dir=log_dir)
     start_tensorboard(log_dir)
     
