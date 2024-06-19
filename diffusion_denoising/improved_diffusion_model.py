@@ -73,7 +73,7 @@ class UNet_S(nn.Module):
         return dec1
 
 class DiffusionModel(nn.Module):
-    def __init__(self, unet, timesteps=50):
+    def __init__(self, unet, timesteps=20):
         super(DiffusionModel, self).__init__()
         self.unet = unet
         self.timesteps = timesteps
@@ -105,7 +105,7 @@ class PerceptualLoss(nn.Module):
     def __init__(self, feature_layer=8):
         super(PerceptualLoss, self).__init__()
         vgg = models.vgg19(weights=models.VGG19_Weights.IMAGENET1K_V1).features
-        self.feature_extractor = nn.Sequential(*list(vgg.children())[:feature_layer]).eval()
+        self.feature_extractor = nn.Sequential(*list(vgg.children())[:feature_layer]).to(device).eval()
         for param in self.feature_extractor.parameters():
             param.requires_grad = False
 
@@ -113,8 +113,8 @@ class PerceptualLoss(nn.Module):
         if img1.size(1) == 1:  # Convert single-channel to 3-channel
             img1 = img1.repeat(1, 3, 1, 1)
             img2 = img2.repeat(1, 3, 1, 1)
-        f1 = self.feature_extractor(img1)
-        f2 = self.feature_extractor(img2)
+        f1 = self.feature_extractor(img1.to(device))
+        f2 = self.feature_extractor(img2.to(device))
         return torch.norm(f1 - f2, p=2) ** 2  # L2 norm squared
 
 # Define the TextureLoss class
@@ -171,8 +171,7 @@ def train_step(model, clean_images, noisy_images, optimizer, loss_fn, writer, ep
     optimizer.zero_grad()
     
     timesteps = model.timesteps
-    with torch.no_grad():
-        clean_images, noisy_images = clean_images.to(device), noisy_images.to(device)
+    clean_images, noisy_images = clean_images.to(device), noisy_images.to(device)
     denoised_images = model(clean_images, noisy_images, timesteps)
     total_loss, l_percep, l_content, l_texture = loss_fn(denoised_images, clean_images)
     total_loss.backward()
