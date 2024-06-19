@@ -231,6 +231,6 @@ if __name__ == "__main__":
     start_tensorboard(log_dir)
     
     image_folder = 'DIV2K_train_HR.nosync'
-    train_loader, val_loader = load_data(image_folder, batch_size=1, augment=False, dataset_percentage=0.001)
+    train_loader, val_loader = load_data(image_folder, batch_size=1, augment=True, dataset_percentage=0.001)
     train_model(model, train_loader, optimizer, writer, multimodal_loss, num_epochs=10)
     writer.close()
