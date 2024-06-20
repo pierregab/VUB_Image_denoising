@@ -387,7 +387,7 @@ def adjust_learning_rates(optimizer_G, optimizer_D, g_loss, d_loss, base_lr=1e-4
             param_group['lr'] = base_lr
 
 def train_rca_gan(train_loader, val_loader, num_epochs=1,
-                    lambda_perceptual=1.0, lambda_content=0.01, lambda_texture=0.001, lambda_adversarial=1.0,
+                    lambda_perceptual=0.001, lambda_content=1, lambda_texture=1e6, lambda_adversarial=1e5,
                     lr_G=1e-3, lr_D=1e-6, betas_G=(0.5, 0.999), betas_D=(0.9, 0.999),
                     init_type='normal', log_dir='runs/paper_gan', use_tensorboard=True,
                     debug=False, device=torch.device("cuda" if torch.cuda.is_available() else "mps"),

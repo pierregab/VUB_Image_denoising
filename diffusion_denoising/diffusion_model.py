@@ -8,6 +8,7 @@ import subprocess
 from torch.utils.tensorboard import SummaryWriter
 from torchvision.utils import make_grid
 import time
+import torch.utils.checkpoint as cp
 
 # Assuming your script is in RCA_GAN and the project root is one level up
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
@@ -21,15 +22,15 @@ device = torch.device("cuda" if torch.cuda.is_available() else "mps" if torch.ba
 def print_memory_stats(prefix=""):
     if torch.cuda.is_available():
         print(f"{prefix} CUDA Memory Allocated: {torch.cuda.memory_allocated() / 1024 ** 3:.2f} GB")
-        print(f"{prefix} CUDA Memory Cached: {torch.cuda.memory_reserved() / 1024 ** 3:.2f} GB")
+        print(f"{prefix} CUDA Memory Reserved: {torch.cuda.memory_reserved() / 1024 ** 3:.2f} GB")
     elif torch.backends.mps.is_available():
         memory_info = psutil.virtual_memory()
         print(f"{prefix} System Memory Used: {memory_info.used / 1024 ** 3:.2f} GB")
         print(f"{prefix} System Memory Available: {memory_info.available / 1024 ** 3:.2f} GB")
 
-class UNet_S(nn.Module):
+class UNet_S_Checkpointed(nn.Module):
     def __init__(self):
-        super(UNet_S, self).__init__()
+        super(UNet_S_Checkpointed, self).__init__()
         self.enc1 = self.conv_block(1, 64)
         self.enc2 = self.conv_block(64, 128)
         self.enc3 = self.conv_block(128, 256)
@@ -61,13 +62,13 @@ class UNet_S(nn.Module):
         return nn.ConvTranspose2d(in_channels, out_channels, kernel_size=2, stride=2)
 
     def forward(self, x):
-        enc1 = self.enc1(x)
-        enc2 = self.enc2(self.pool(enc1))
-        enc3 = self.enc3(self.pool(enc2))
-        enc4 = self.enc4(self.pool(enc3))
-        dec4 = self.dec4(torch.cat((self.upconv4(enc4), enc3), dim=1))
-        dec3 = self.dec3(torch.cat((self.upconv3(dec4), enc2), dim=1))
-        dec2 = self.dec2(torch.cat((self.upconv2(dec3), enc1), dim=1))
+        enc1 = cp.checkpoint(self.enc1, x, use_reentrant=False)
+        enc2 = cp.checkpoint(self.enc2, self.pool(enc1), use_reentrant=False)
+        enc3 = cp.checkpoint(self.enc3, self.pool(enc2), use_reentrant=False)
+        enc4 = cp.checkpoint(self.enc4, self.pool(enc3), use_reentrant=False)
+        dec4 = cp.checkpoint(self.dec4, torch.cat((self.upconv4(enc4), enc3), dim=1), use_reentrant=False)
+        dec3 = cp.checkpoint(self.dec3, torch.cat((self.upconv3(dec4), enc2), dim=1), use_reentrant=False)
+        dec2 = cp.checkpoint(self.dec2, torch.cat((self.upconv2(dec3), enc1), dim=1), use_reentrant=False)
         dec1 = self.dec1(dec2)
         return dec1
 
@@ -87,15 +88,11 @@ class DiffusionModel(nn.Module):
         for t in reversed(range(1, self.timesteps + 1)):
             alpha_t = t / self.timesteps
             alpha_t_prev = (t - 1) / self.timesteps
-            #print_memory_stats(f"Before UNet at timestep {t}")
             x_t_unet = self.unet(x_t)
-            #print_memory_stats(f"After UNet at timestep {t}")
-            #print(f"Size of x_t_unet at timestep {t}: {x_t_unet.size()}")
             x_tilde = (1 - alpha_t) * x_t_unet + alpha_t * noisy_image
             x_tilde_prev_unet = self.unet(x_t)
             x_tilde_prev = (1 - alpha_t_prev) * x_tilde_prev_unet + alpha_t_prev * noisy_image
             x_t = x_t - x_tilde + x_tilde_prev
-            #print_memory_stats(f"After update x_t at timestep {t}")
         return x_t
 
     def forward(self, clean_image, noisy_image, t):
@@ -106,22 +103,22 @@ class DiffusionModel(nn.Module):
 def charbonnier_loss(pred, target, epsilon=1e-3):
     return torch.mean(torch.sqrt((pred - target) ** 2 + epsilon ** 2))
 
-# Define the model and optimizer
-unet = UNet_S().to(device)
-model = DiffusionModel(unet).to(device)
-optimizer = optim.Adam(model.parameters(), lr=2e-4, betas=(0.9, 0.999))
+# Define the checkpointed model and optimizer
+unet_checkpointed = UNet_S_Checkpointed().to(device)
+model_checkpointed = DiffusionModel(unet_checkpointed).to(device)
+optimizer = optim.Adam(model_checkpointed.parameters(), lr=2e-4, betas=(0.9, 0.999))
 
 def denormalize(tensor):
     return tensor * 0.5 + 0.5
 
 # Sample training loop
-def train_step(model, clean_images, noisy_images, optimizer):
+def train_step_checkpointed(model, clean_images, noisy_images, optimizer):
     model.train()
     optimizer.zero_grad()
     
     timesteps = model.timesteps
-    with torch.no_grad():
-        clean_images, noisy_images = clean_images.to(device), noisy_images.to(device)
+    clean_images, noisy_images = clean_images.to(device), noisy_images.to(device)
+    
     denoised_images = model(clean_images, noisy_images, timesteps)
     loss = charbonnier_loss(denoised_images, clean_images)
     loss.backward()
@@ -129,10 +126,10 @@ def train_step(model, clean_images, noisy_images, optimizer):
     
     return loss.item()
 
-def train_model(model, train_loader, optimizer, writer, num_epochs=10):
+def train_model_checkpointed(model, train_loader, optimizer, writer, num_epochs=10):
     for epoch in range(num_epochs):
         for batch_idx, (noisy_images, clean_images) in enumerate(train_loader):
-            loss = train_step(model, clean_images, noisy_images, optimizer)
+            loss = train_step_checkpointed(model, clean_images, noisy_images, optimizer)
             print(f"Epoch [{epoch + 1}/{num_epochs}], Batch [{batch_idx + 1}/{len(train_loader)}], Loss: {loss:.4f}")
             
             writer.add_scalar('Loss/train', loss, epoch * len(train_loader) + batch_idx)
@@ -160,7 +157,6 @@ def train_model(model, train_loader, optimizer, writer, num_epochs=10):
         
         writer.flush()
 
-
 def start_tensorboard(log_dir):
     try:
         subprocess.Popen(['tensorboard', '--logdir', log_dir])
@@ -174,11 +170,11 @@ if __name__ == "__main__":
     if torch.backends.mps.is_available():
         torch.mps.empty_cache()
 
-    log_dir = os.path.join("runs", "diffusion")
+    log_dir = os.path.join("runs", "diffusion_checkpointed")
     writer = SummaryWriter(log_dir=log_dir)
     start_tensorboard(log_dir)
     
     image_folder = 'DIV2K_train_HR.nosync'
-    train_loader, val_loader = load_data(image_folder, batch_size=1, augment=False, dataset_percentage=0.001)
-    train_model(model, train_loader, optimizer, writer, num_epochs=10)
+    train_loader, val_loader = load_data(image_folder, batch_size=2, augment=False, dataset_percentage=0.001)
+    train_model_checkpointed(model_checkpointed, train_loader, optimizer, writer, num_epochs=10)
     writer.close()
