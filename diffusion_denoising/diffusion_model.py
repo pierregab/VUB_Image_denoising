@@ -31,7 +31,7 @@ def print_memory_stats(prefix=""):
 class UNet_S_Checkpointed(nn.Module):
     def __init__(self):
         super(UNet_S_Checkpointed, self).__init__()
-        self.enc1 = self.conv_block(1, 64)
+        self.enc1 = self.conv_block(2, 64)  # Change input channels to 2 (image + time step)
         self.enc2 = self.conv_block(64, 128)
         self.enc3 = self.conv_block(128, 256)
         self.enc4 = self.conv_block(256, 512)
@@ -61,7 +61,11 @@ class UNet_S_Checkpointed(nn.Module):
     def upconv(self, in_channels, out_channels):
         return nn.ConvTranspose2d(in_channels, out_channels, kernel_size=2, stride=2)
 
-    def forward(self, x):
+    def forward(self, x, t):
+        # Concatenate the time step with the input image
+        t = t.expand(x.size(0), 1, x.size(2), x.size(3))
+        x = torch.cat((x, t), dim=1)
+
         enc1 = cp.checkpoint(self.enc1, x, use_reentrant=False)
         enc2 = cp.checkpoint(self.enc2, self.pool(enc1), use_reentrant=False)
         enc3 = cp.checkpoint(self.enc3, self.pool(enc2), use_reentrant=False)
@@ -71,6 +75,7 @@ class UNet_S_Checkpointed(nn.Module):
         dec2 = cp.checkpoint(self.dec2, torch.cat((self.upconv2(dec3), enc1), dim=1), use_reentrant=False)
         dec1 = self.dec1(dec2)
         return dec1
+
 
 class DiffusionModel(nn.Module):
     def __init__(self, unet, timesteps=20):
@@ -88,9 +93,11 @@ class DiffusionModel(nn.Module):
         for t in reversed(range(1, self.timesteps + 1)):
             alpha_t = t / self.timesteps
             alpha_t_prev = (t - 1) / self.timesteps
-            x_t_unet = self.unet(x_t)
+            t_tensor = torch.tensor([t / self.timesteps], device=noisy_image.device).unsqueeze(0).unsqueeze(2).unsqueeze(3)
+            x_t_unet = self.unet(x_t, t_tensor)
             x_tilde = (1 - alpha_t) * x_t_unet + alpha_t * noisy_image
-            x_tilde_prev_unet = self.unet(x_t)
+            t_tensor_prev = torch.tensor([(t - 1) / self.timesteps], device=noisy_image.device).unsqueeze(0).unsqueeze(2).unsqueeze(3)
+            x_tilde_prev_unet = self.unet(x_t, t_tensor_prev)
             x_tilde_prev = (1 - alpha_t_prev) * x_tilde_prev_unet + alpha_t_prev * noisy_image
             x_t = x_t - x_tilde + x_tilde_prev
         return x_t
@@ -99,6 +106,7 @@ class DiffusionModel(nn.Module):
         noisy_step_image = self.forward_diffusion(clean_image, noisy_image, t)
         denoised_image = self.improved_sampling(noisy_step_image)
         return denoised_image
+
 
 def charbonnier_loss(pred, target, epsilon=1e-3):
     return torch.mean(torch.sqrt((pred - target) ** 2 + epsilon ** 2))
