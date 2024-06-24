@@ -443,6 +443,7 @@ def train_rca_gan(train_loader, val_loader, num_epochs=1,
             if (i + 1) % accumulation_steps == 0:
                 scaler.step(optimizer_D)
                 scaler.update()
+                scheduler_D.step()  # Move scheduler_D.step() here
 
             # Train Generator
             optimizer_G.zero_grad()
@@ -453,6 +454,7 @@ def train_rca_gan(train_loader, val_loader, num_epochs=1,
             if (i + 1) % accumulation_steps == 0:
                 scaler.step(optimizer_G)
                 scaler.update()
+                scheduler_G.step()  # Move scheduler_G.step() here
 
             if i % 1 == 0:
                 print(f"[Epoch {epoch}/{num_epochs}] [Batch {i}/{len(train_loader)}] [D loss: {d_loss.item()}] [G loss: {g_loss.item()}]")
@@ -504,9 +506,6 @@ def train_rca_gan(train_loader, val_loader, num_epochs=1,
                         elif output.size(1) > 3:
                             output = output[:, :3, :, :]
                         writer_debug.add_images(name, output, epoch)
-
-        scheduler_G.step()
-        scheduler_D.step()
 
         # Early stopping
         if val_loss < best_val_loss:
