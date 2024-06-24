@@ -226,9 +226,9 @@ class Discriminator(nn.Module):
 
         # Fully connected layers
         self.fc_layers = nn.Sequential(
-            nn.Linear(16 * 8 * 8, 512),
+            nn.Linear(16 * 8 * 8, 256),
             nn.ReLU(inplace=True),
-            nn.Linear(512, 1)
+            nn.Linear(256, 1)
         )
 
     def forward(self, x):
