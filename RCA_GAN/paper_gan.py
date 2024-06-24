@@ -391,7 +391,7 @@ def adjust_learning_rates(optimizer_G, optimizer_D, g_loss, d_loss, base_lr=1e-4
         for param_group in optimizer_D.param_groups:
             param_group['lr'] = base_lr
 
-def calculate_ssim_psnr(real_images, generated_images, win_size=3):
+def calculate_ssim_psnr(real_images, generated_images):
     real_images_np = real_images.detach().cpu().numpy()
     generated_images_np = generated_images.detach().cpu().numpy()
     
@@ -401,8 +401,9 @@ def calculate_ssim_psnr(real_images, generated_images, win_size=3):
     for real_img, gen_img in zip(real_images_np, generated_images_np):
         real_img = np.transpose(real_img, (1, 2, 0))
         gen_img = np.transpose(gen_img, (1, 2, 0))
-        
-        # Handle small images by adjusting the win_size dynamically
+
+        # Ensure that the window size for SSIM is appropriate for the image size
+        win_size = 7
         if min(real_img.shape[:2]) < win_size:
             win_size = min(real_img.shape[:2]) // 2 * 2 + 1  # Ensure the win_size is odd
         
@@ -413,6 +414,7 @@ def calculate_ssim_psnr(real_images, generated_images, win_size=3):
         psnr_values.append(psnr)
     
     return np.mean(ssim_values), np.mean(psnr_values)
+
 
 def train_rca_gan(train_loader, val_loader, num_epochs=1,
                     lambda_perceptual=1e-7, lambda_content=1e-4, lambda_texture=1e2, lambda_adversarial=1,
