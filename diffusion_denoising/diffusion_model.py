@@ -159,7 +159,7 @@ def train_model_checkpointed(model, train_loader, optimizer, writer, num_epochs=
                 writer.add_image(f'Epoch_{epoch + 1}/Clean Images', grid_clean, epoch + 1)
                 writer.add_image(f'Epoch_{epoch + 1}/Noisy Images', grid_noisy, epoch + 1)
                 writer.add_image(f'Epoch_{epoch + 1}/Denoised Images', grid_denoised, epoch + 1)
-                
+             
                 if batch_idx >= 0:  # Change this if you want more batches
                     break
         

@@ -218,14 +218,15 @@ class Discriminator(nn.Module):
             ConvBlock(64, 128, kernel_size=3, stride=1, padding=1),
             ConvBlock(128, 128, kernel_size=3, stride=2, padding=1),
             ConvBlock(128, 256, kernel_size=3, stride=1, padding=1),
-            ConvBlock(256, 256, kernel_size=3, stride=2, padding=1)
+            ConvBlock(256, 64, kernel_size=3, stride=2, padding=1),
+            ConvBlock(64, 32, kernel_size=3, stride=2, padding=1)
         )
 
         # Fully connected layers
         self.fc_layers = nn.Sequential(
-            nn.Linear(256 * 32 * 32, 1024),
+            nn.Linear(32 * 16 * 16, 512),
             nn.ReLU(inplace=True),
-            nn.Linear(1024, 1)
+            nn.Linear(512, 1)
         )
 
     def forward(self, x):
