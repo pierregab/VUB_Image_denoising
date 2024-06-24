@@ -496,18 +496,18 @@ def train_rca_gan(train_loader, val_loader, num_epochs=1,
                 
                 val_loss += multimodal_loss(gen_clean, gt_images, degraded_images).item()
                 
-                ssim, psnr = calculate_ssim_psnr(gt_images, gen_clean)
-                ssim_total += ssim
-                psnr_total += psnr
+                #ssim, psnr = calculate_ssim_psnr(gt_images, gen_clean)
+                #ssim_total += ssim
+                #psnr_total += psnr
         
         val_loss /= len(val_loader)
-        ssim_avg = ssim_total / len(val_loader)
-        psnr_avg = psnr_total / len(val_loader)
+        #ssim_avg = ssim_total / len(val_loader)
+        #psnr_avg = psnr_total / len(val_loader)
 
         if use_tensorboard:
             writer.add_scalar('Loss/Validation', val_loss, epoch)
-            writer.add_scalar('Metrics/SSIM', ssim_avg, epoch)
-            writer.add_scalar('Metrics/PSNR', psnr_avg, epoch)
+            #writer.add_scalar('Metrics/SSIM', ssim_avg, epoch)
+            #writer.add_scalar('Metrics/PSNR', psnr_avg, epoch)
 
         if use_tensorboard:
             with torch.no_grad():
