@@ -428,19 +428,21 @@ def train_rca_gan(train_loader, val_loader, num_epochs=1,
             gt_images = gt_images.to(device)
 
             # Train Discriminator
-            optimizer_D.zero_grad()
-            gen_clean, _ = generator(degraded_images)
-            real_data = gt_images
-            fake_data = gen_clean.detach()
-            d_loss = multimodal_loss.adversarial_loss.discriminator_loss(real_data, fake_data)
-            d_loss.backward()
-            optimizer_D.step()
+            with amp.autocast():
+                optimizer_D.zero_grad()
+                gen_clean, _ = generator(degraded_images)
+                real_data = gt_images
+                fake_data = gen_clean.detach()
+                d_loss = multimodal_loss.adversarial_loss.discriminator_loss(real_data, fake_data)
+                d_loss.backward()
+                optimizer_D.step()
 
             # Train Generator
-            optimizer_G.zero_grad()
-            g_loss = multimodal_loss(gen_clean, gt_images, degraded_images)
-            g_loss.backward()
-            optimizer_G.step()
+            with amp.autocast():
+                optimizer_G.zero_grad()
+                g_loss = multimodal_loss(gen_clean, gt_images, degraded_images)
+                g_loss.backward()
+                optimizer_G.step()
 
             if i % 1 == 0:
                 print(f"[Epoch {epoch}/{num_epochs}] [Batch {i}/{len(train_loader)}] [D loss: {d_loss.item()}] [G loss: {g_loss.item()}]")
