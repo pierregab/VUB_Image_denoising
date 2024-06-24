@@ -46,7 +46,7 @@ class SinusoidalPositionEmbeddings(nn.Module):
 class Block(nn.Module):
     def __init__(self, in_ch, out_ch, time_emb_dim, up=False):
         super().__init__()
-        self.time_mlp =  nn.Linear(time_emb_dim, out_ch)
+        self.time_mlp = nn.Linear(time_emb_dim, out_ch)
         if up:
             self.conv1 = nn.Conv2d(2*in_ch, out_ch, 3, padding=1)
             self.transform = nn.ConvTranspose2d(out_ch, out_ch, 4, 2, 1)
@@ -56,21 +56,22 @@ class Block(nn.Module):
         self.conv2 = nn.Conv2d(out_ch, out_ch, 3, padding=1)
         self.bnorm1 = nn.BatchNorm2d(out_ch)
         self.bnorm2 = nn.BatchNorm2d(out_ch)
-        self.relu  = nn.ReLU()
+        self.relu = nn.ReLU()
         
     def forward(self, x, t):
-        print(f"Block input x: {x.shape}")
-        print(f"Block input t: {t.shape}")
+        #print(f"Block input x: {x.shape}")
+        #print(f"Block input t: {t.shape}")
         
         if x.dim() != 4:
             raise ValueError(f"Expected 4D input (got {x.dim()}D input)")
 
         h = self.bnorm1(self.relu(self.conv1(x)))
         time_emb = self.relu(self.time_mlp(t))
-        time_emb = time_emb[(..., ) + (None, ) * 2]
-        h = h + time_emb
+        # Reshape time embedding to match batch size and channel dimensions of h
+        time_emb = time_emb.view(h.shape[0], -1, 1, 1)
+        h = h + time_emb.expand(-1, -1, h.size(2), h.size(3))
         h = self.bnorm2(self.relu(self.conv2(h)))
-        print(f"Block output h: {h.shape}")
+        #print(f"Block output h: {h.shape}")
         return self.transform(h)
 
 class UNet_S_Improved(nn.Module):
@@ -102,8 +103,8 @@ class UNet_S_Improved(nn.Module):
         self.output = nn.Conv2d(64, 1, 1)
 
     def forward(self, x, t):
-        print(f"UNet input x: {x.shape}")
-        print(f"UNet input t: {t.shape}")
+        #print(f"UNet input x: {x.shape}")
+        #print(f"UNet input t: {t.shape}")
 
         if x.dim() != 4:
             raise ValueError(f"Expected 4D input (got {x.dim()}D input)")
@@ -121,7 +122,7 @@ class UNet_S_Improved(nn.Module):
             x = torch.cat((x, residual), dim=1)
             x = up(x, t)
         
-        print(f"UNet output x: {x.shape}")
+        #print(f"UNet output x: {x.shape}")
         return self.output(x)
 
 class DiffusionModel(nn.Module):
@@ -134,16 +135,16 @@ class DiffusionModel(nn.Module):
         alpha = t.view(-1, 1, 1, 1) / self.timesteps  # Reshape alpha to match the image dimensions
         interpolated_image = alpha * noisy_image + (1 - alpha) * clean_image
         return interpolated_image
-
+    
     def improved_sampling(self, noisy_image):
         x_t = noisy_image
         for t in reversed(range(1, self.timesteps + 1)):
             alpha_t = t / self.timesteps
             alpha_t_prev = (t - 1) / self.timesteps
-            t_tensor = torch.tensor([t / self.timesteps], device=noisy_image.device).unsqueeze(0).unsqueeze(2).unsqueeze(3)
+            t_tensor = torch.full((noisy_image.size(0),), t / self.timesteps, device=noisy_image.device)
             x_t_unet = self.unet(x_t, t_tensor)
             x_tilde = (1 - alpha_t) * x_t_unet + alpha_t * noisy_image
-            t_tensor_prev = torch.tensor([(t - 1) / self.timesteps], device=noisy_image.device).unsqueeze(0).unsqueeze(2).unsqueeze(3)
+            t_tensor_prev = torch.full((noisy_image.size(0),), (t - 1) / self.timesteps, device=noisy_image.device)
             x_tilde_prev_unet = self.unet(x_t, t_tensor_prev)
             x_tilde_prev = (1 - alpha_t_prev) * x_tilde_prev_unet + alpha_t_prev * noisy_image
             x_t = x_t - x_tilde + x_tilde_prev
@@ -172,8 +173,7 @@ def train_diffusion_model(model, train_loader, optimizer, num_epochs, device, wr
             loss.backward()
             optimizer.step()
             
-            if batch_idx % 100 == 0:
-                print(f"Epoch [{epoch+1}/{num_epochs}], Step [{batch_idx}/{len(train_loader)}], Loss: {loss.item():.4f}")
+            print(f"Epoch [{epoch+1}/{num_epochs}], Step [{batch_idx}/{len(train_loader)}], Loss: {loss.item():.4f}")
         
         # Visualization
         if (epoch + 1) % 5 == 0:
@@ -205,7 +205,7 @@ if __name__ == "__main__":
 
     # Load data and start training
     image_folder = 'DIV2K_train_HR.nosync'
-    train_loader, val_loader = load_data(image_folder, batch_size=8, augment=True, dataset_percentage=0.1)
+    train_loader, val_loader = load_data(image_folder, batch_size=1, augment=True, dataset_percentage=0.1)
 
     log_dir = "runs/diffusion_model_denoising"
     writer = SummaryWriter(log_dir=log_dir)

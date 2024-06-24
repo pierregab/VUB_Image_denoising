@@ -7,6 +7,7 @@ from torch.utils.tensorboard import SummaryWriter
 import torchvision
 import numpy as np
 import optuna
+import torch.cuda.amp as amp
 
 # Define the ChannelAttention class
 class ChannelAttention(nn.Module):
@@ -219,12 +220,13 @@ class Discriminator(nn.Module):
             ConvBlock(128, 128, kernel_size=3, stride=2, padding=1),
             ConvBlock(128, 256, kernel_size=3, stride=1, padding=1),
             ConvBlock(256, 64, kernel_size=3, stride=2, padding=1),
-            ConvBlock(64, 32, kernel_size=3, stride=2, padding=1)
+            ConvBlock(64, 32, kernel_size=3, stride=2, padding=1),
+            ConvBlock(32, 16, kernel_size=3, stride=2, padding=1)
         )
 
         # Fully connected layers
         self.fc_layers = nn.Sequential(
-            nn.Linear(32 * 16 * 16, 512),
+            nn.Linear(16 * 8 * 8, 512),
             nn.ReLU(inplace=True),
             nn.Linear(512, 1)
         )
@@ -392,7 +394,8 @@ def train_rca_gan(train_loader, val_loader, num_epochs=1,
                     lr_G=1e-3, lr_D=1e-6, betas_G=(0.5, 0.999), betas_D=(0.9, 0.999),
                     init_type='normal', log_dir='runs/paper_gan', use_tensorboard=True,
                     debug=False, device=torch.device("cuda" if torch.cuda.is_available() else "mps"),
-                    early_stopping_patience=None, trial=None):
+                    early_stopping_patience=None, trial=None,
+                    accumulation_steps=4):  # Added accumulation_steps
 
     # Initialize the models
     in_channels = 1
@@ -416,6 +419,9 @@ def train_rca_gan(train_loader, val_loader, num_epochs=1,
     scheduler_G = optim.lr_scheduler.StepLR(optimizer_G, step_size=10, gamma=0.5)
     scheduler_D = optim.lr_scheduler.StepLR(optimizer_D, step_size=10, gamma=0.5)
 
+    # For mixed-precision training
+    scaler = amp.GradScaler()
+
     global_step = 0
     best_val_loss = float('inf')
     epochs_no_improve = 0
@@ -427,18 +433,26 @@ def train_rca_gan(train_loader, val_loader, num_epochs=1,
 
             # Train Discriminator
             optimizer_D.zero_grad()
-            gen_clean, _ = generator(degraded_images)
-            real_data = gt_images
-            fake_data = gen_clean.detach()
-            d_loss = multimodal_loss.adversarial_loss.discriminator_loss(real_data, fake_data)
-            d_loss.backward()
-            optimizer_D.step()
+            with amp.autocast():
+                gen_clean, _ = generator(degraded_images)
+                real_data = gt_images
+                fake_data = gen_clean.detach()
+                d_loss = multimodal_loss.adversarial_loss.discriminator_loss(real_data, fake_data)
+
+            scaler.scale(d_loss).backward()
+            if (i + 1) % accumulation_steps == 0:
+                scaler.step(optimizer_D)
+                scaler.update()
 
             # Train Generator
             optimizer_G.zero_grad()
-            g_loss = multimodal_loss(gen_clean, gt_images, degraded_images)
-            g_loss.backward()
-            optimizer_G.step()
+            with amp.autocast():
+                g_loss = multimodal_loss(gen_clean, gt_images, degraded_images)
+
+            scaler.scale(g_loss).backward()
+            if (i + 1) % accumulation_steps == 0:
+                scaler.step(optimizer_G)
+                scaler.update()
 
             if i % 1 == 0:
                 print(f"[Epoch {epoch}/{num_epochs}] [Batch {i}/{len(train_loader)}] [D loss: {d_loss.item()}] [G loss: {g_loss.item()}]")
