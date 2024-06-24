@@ -391,7 +391,7 @@ def adjust_learning_rates(optimizer_G, optimizer_D, g_loss, d_loss, base_lr=1e-4
         for param_group in optimizer_D.param_groups:
             param_group['lr'] = base_lr
 
-def calculate_ssim_psnr(real_images, generated_images):
+def calculate_ssim_psnr(real_images, generated_images, win_size=3):
     real_images_np = real_images.detach().cpu().numpy()
     generated_images_np = generated_images.detach().cpu().numpy()
     
@@ -402,7 +402,7 @@ def calculate_ssim_psnr(real_images, generated_images):
         real_img = np.transpose(real_img, (1, 2, 0))
         gen_img = np.transpose(gen_img, (1, 2, 0))
         
-        ssim = structural_similarity(real_img, gen_img, multichannel=True, data_range=real_img.max() - real_img.min())
+        ssim = structural_similarity(real_img, gen_img, multichannel=True, data_range=real_img.max() - real_img.min(), win_size=win_size)
         psnr = peak_signal_noise_ratio(real_img, gen_img, data_range=real_img.max() - real_img.min())
         
         ssim_values.append(ssim)
