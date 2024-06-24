@@ -8,6 +8,8 @@ import torchvision
 import numpy as np
 import optuna
 import torch.cuda.amp as amp
+import torchvision.transforms as T
+from skimage.metrics import peak_signal_noise_ratio, structural_similarity
 
 # Define the ChannelAttention class
 class ChannelAttention(nn.Module):
@@ -389,6 +391,25 @@ def adjust_learning_rates(optimizer_G, optimizer_D, g_loss, d_loss, base_lr=1e-4
         for param_group in optimizer_D.param_groups:
             param_group['lr'] = base_lr
 
+def calculate_ssim_psnr(real_images, generated_images):
+    real_images_np = real_images.detach().cpu().numpy()
+    generated_images_np = generated_images.detach().cpu().numpy()
+    
+    ssim_values = []
+    psnr_values = []
+
+    for real_img, gen_img in zip(real_images_np, generated_images_np):
+        real_img = np.transpose(real_img, (1, 2, 0))
+        gen_img = np.transpose(gen_img, (1, 2, 0))
+        
+        ssim = structural_similarity(real_img, gen_img, multichannel=True, data_range=real_img.max() - real_img.min())
+        psnr = peak_signal_noise_ratio(real_img, gen_img, data_range=real_img.max() - real_img.min())
+        
+        ssim_values.append(ssim)
+        psnr_values.append(psnr)
+    
+    return np.mean(ssim_values), np.mean(psnr_values)
+
 def train_rca_gan(train_loader, val_loader, num_epochs=1,
                     lambda_perceptual=1e-7, lambda_content=1e-4, lambda_texture=1e2, lambda_adversarial=1,
                     lr_G=1e-3, lr_D=1e-6, betas_G=(0.5, 0.999), betas_D=(0.9, 0.999),
@@ -456,17 +477,27 @@ def train_rca_gan(train_loader, val_loader, num_epochs=1,
             global_step += 1
 
         val_loss = 0.0
+        ssim_total = 0.0
+        psnr_total = 0.0
         with torch.no_grad():
             for degraded_images, gt_images in val_loader:
                 degraded_images = degraded_images.to(device)
                 gt_images = gt_images.to(device)
                 gen_clean, _ = generator(degraded_images)
                 val_loss += multimodal_loss(gen_clean, gt_images, degraded_images).item()
+                
+                ssim, psnr = calculate_ssim_psnr(gt_images, gen_clean)
+                ssim_total += ssim
+                psnr_total += psnr
         
         val_loss /= len(val_loader)
+        ssim_avg = ssim_total / len(val_loader)
+        psnr_avg = psnr_total / len(val_loader)
 
         if use_tensorboard:
             writer.add_scalar('Loss/Validation', val_loss, epoch)
+            writer.add_scalar('Metrics/SSIM', ssim_avg, epoch)
+            writer.add_scalar('Metrics/PSNR', psnr_avg, epoch)
 
         if use_tensorboard:
             with torch.no_grad():
