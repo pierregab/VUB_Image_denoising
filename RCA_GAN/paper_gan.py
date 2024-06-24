@@ -402,6 +402,10 @@ def calculate_ssim_psnr(real_images, generated_images, win_size=3):
         real_img = np.transpose(real_img, (1, 2, 0))
         gen_img = np.transpose(gen_img, (1, 2, 0))
         
+        # Handle small images by adjusting the win_size dynamically
+        if min(real_img.shape[:2]) < win_size:
+            win_size = min(real_img.shape[:2]) // 2 * 2 + 1  # Ensure the win_size is odd
+        
         ssim = structural_similarity(real_img, gen_img, multichannel=True, data_range=real_img.max() - real_img.min(), win_size=win_size)
         psnr = peak_signal_noise_ratio(real_img, gen_img, data_range=real_img.max() - real_img.min())
         
@@ -484,6 +488,12 @@ def train_rca_gan(train_loader, val_loader, num_epochs=1,
                 degraded_images = degraded_images.to(device)
                 gt_images = gt_images.to(device)
                 gen_clean, _ = generator(degraded_images)
+                
+                # Denormalize images
+                degraded_images = denormalize(degraded_images)
+                gt_images = denormalize(gt_images)
+                gen_clean = denormalize(gen_clean)
+                
                 val_loss += multimodal_loss(gen_clean, gt_images, degraded_images).item()
                 
                 ssim, psnr = calculate_ssim_psnr(gt_images, gen_clean)
