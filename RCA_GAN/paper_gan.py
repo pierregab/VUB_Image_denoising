@@ -399,8 +399,6 @@ def calculate_ssim_psnr(real_images, generated_images):
     psnr_values = []
 
     for real_img, gen_img in zip(real_images_np, generated_images_np):
-        real_img = np.transpose(real_img, (1, 2, 0))
-        gen_img = np.transpose(gen_img, (1, 2, 0))
 
         # Ensure that the window size for SSIM is appropriate for the image size
         win_size = 7
