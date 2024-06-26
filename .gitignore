@@ -1,3 +1,8 @@
 DIV2K_train_HR.nosync/
 DIV2K_valid_HR.nosync/
 astro_dataset.nosync/
+evaluate_SIDD/ValidationNoisyBlocksSrgb.mat
+evaluate_SIDD/ValidationGtBlocksSrgb.mat
+evaluate_SIDD/ValidationGtBlocksRaw.mat
+evaluate_SIDD/ValidationNoisyBlocksRaw.mat
+evaluate_SIDD/BenchmarkBlocks32.mat

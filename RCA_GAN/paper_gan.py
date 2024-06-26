@@ -133,7 +133,7 @@ class MultiScaleConv(nn.Module):
 
 # Define the Generator class
 class Generator(nn.Module):
-    def __init__(self, in_channels, out_channels):
+    def __init__(self, in_channels, out_channels, conv_block_channels):
         super(Generator, self).__init__()
 
         # Initial Conv Block
@@ -153,11 +153,11 @@ class Generator(nn.Module):
 
         # Convolution Blocks leading to a single-channel output
         self.conv_blocks = nn.Sequential(
-            ConvBlock(64, 32, kernel_size=3, stride=1, padding=1),  # reduce to 32 channels, kernel size 3
-            ConvBlock(32, 16, kernel_size=3, stride=1, padding=1),  # reduce to 16 channels, kernel size 5
-            ConvBlock(16, 8, kernel_size=3, stride=1, padding=1),   # reduce to 8 channels, kernel size 7
-            ConvBlock(8, 4, kernel_size=3, stride=1, padding=1),    # reduce to 4 channels, kernel size 5
-            ConvBlock(4, out_channels, kernel_size=1, stride=1, padding=0),  # finally reduce to out_channels, kernel size 1
+            ConvBlock(64, conv_block_channels[0], kernel_size=3, stride=1, padding=1),  # reduce to 32 channels, kernel size 3
+            ConvBlock(conv_block_channels[0], conv_block_channels[1], kernel_size=3, stride=1, padding=1),  # reduce to 16 channels, kernel size 5
+            ConvBlock(conv_block_channels[1], conv_block_channels[2], kernel_size=3, stride=1, padding=1),   # reduce to 8 channels, kernel size 7
+            ConvBlock(conv_block_channels[2], conv_block_channels[3], kernel_size=3, stride=1, padding=1),    # reduce to 4 channels, kernel size 5
+            ConvBlock(conv_block_channels[3], out_channels, kernel_size=1, stride=1, padding=0),  # finally reduce to out_channels, kernel size 1
         )
 
         # Final tanh activation for output
@@ -394,12 +394,12 @@ def train_rca_gan(train_loader, val_loader, num_epochs=1,
                     lr_G=1e-3, lr_D=1e-6, betas_G=(0.5, 0.999), betas_D=(0.9, 0.999),
                     init_type='normal', log_dir='runs/paper_gan', use_tensorboard=True,
                     debug=False, device=torch.device("cuda" if torch.cuda.is_available() else "mps"),
-                    early_stopping_patience=None, trial=None):
+                    early_stopping_patience=None, trial=None, conv_block_channels=[32, 16, 8, 4]):
 
     # Initialize the models
     in_channels = 1
     out_channels = 1
-    generator = Generator(in_channels, out_channels).to(device)
+    generator = Generator(in_channels, out_channels, conv_block_channels).to(device)
     discriminator = Discriminator(in_channels).to(device)
     multimodal_loss = MultimodalLoss(discriminator, lambda_perceptual, lambda_content, lambda_texture, lambda_adversarial).to(device)
 

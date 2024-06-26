@@ -25,7 +25,7 @@ def main():
     start_tensorboard(log_dir)
     
     train_loader, val_loader = load_data(image_folder, batch_size=8, num_workers=8,
-                                          validation_split=0.2, augment=False, dataset_percentage=0.001)
+                                          validation_split=0.2, augment=False, dataset_percentage=0.0001)
 
     # Train the model with the current hyperparameters
     train_rca_gan(

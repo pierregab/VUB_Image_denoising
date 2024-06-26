@@ -17,8 +17,7 @@ from dataset_creation.data_loader import load_data
 from paper_gan import train_rca_gan, denormalize
 
 # Define paths to ground truth and degraded images
-gt_folder = 'DIV2K_train_HR.nosync/resized_ground_truth_images'
-degraded_folder = 'DIV2K_train_HR.nosync/degraded_images'
+image_folder = 'DIV2K_train_HR.nosync'
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'mps')
 
@@ -40,12 +39,21 @@ def plot_losses(train_losses, val_losses, loss_names, output_path):
     plt.close()
 
 def objective(trial, train_loader, val_loader):
-    lambda_perceptual = trial.suggest_float('lambda_perceptual', 0.01, 10.0, log=True)
-    lambda_content = trial.suggest_float('lambda_content', 0.001, 1.0, log=True)
-    lambda_texture = trial.suggest_float('lambda_texture', 0.0001, 0.1, log=True)
-    lambda_adversarial = trial.suggest_float('lambda_adversarial', 0.1, 5.0, log=True)
-    lr_G = trial.suggest_float('lr_G', 1e-4, 1e-2, log=True)
-    lr_D = trial.suggest_float('lr_D', 1e-7, 1e-4, log=True)
+    # Tune conv_block_channels
+    conv_block_channels = [
+        trial.suggest_int('conv_block_channels_0', 8, 64, log=True),
+        trial.suggest_int('conv_block_channels_1', 4, 32, log=True),
+        trial.suggest_int('conv_block_channels_2', 2, 16, log=True),
+        trial.suggest_int('conv_block_channels_3', 1, 8, log=True)
+    ]
+
+    # Fixed hyperparameters
+    lambda_perceptual = 1e-7
+    lambda_content = 1e-4
+    lambda_texture = 1e2
+    lambda_adversarial = 1
+    lr_G = 1e-3
+    lr_D = 1e-6
 
     log_dir = f"runs/paper_gan/optuna_trial_{trial.number}"
     os.makedirs(log_dir, exist_ok=True)
@@ -56,7 +64,8 @@ def objective(trial, train_loader, val_loader):
         lambda_texture=lambda_texture, lambda_adversarial=lambda_adversarial,
         lr_G=lr_G, lr_D=lr_D, log_dir=log_dir,
         early_stopping_patience=5,  # Adding early stopping patience
-        trial=trial  # Pass the trial for pruning
+        trial=trial,  # Pass the trial for pruning
+        conv_block_channels=conv_block_channels  # Pass the tuned conv_block_channels
     )
 
     multimodal_loss = MultimodalLoss(discriminator, lambda_perceptual, lambda_content, lambda_texture, lambda_adversarial).to(device)
@@ -85,9 +94,9 @@ def main():
     log_dir_base = 'runs/paper_gan'
     start_tensorboard(log_dir_base)
 
-    # Use num_workers=0 to avoid multiprocessing issues for debugging
-    train_loader, val_loader = load_data(gt_folder, degraded_folder, batch_size=1, num_workers=8, 
-                                         validation_split=0.2, augment=False, dataset_percentage=0.5)
+    # Use num_workers=8 to utilize multiple workers for data loading
+    train_loader, val_loader = load_data(image_folder, batch_size=8, num_workers=8, 
+                                         validation_split=0.2, augment=False, dataset_percentage=0.001)
 
     study = optuna.create_study(direction='minimize', pruner=optuna.pruners.MedianPruner(n_startup_trials=5))
     study.optimize(lambda trial: objective(trial, train_loader, val_loader), n_trials=50)
