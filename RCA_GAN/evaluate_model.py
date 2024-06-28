@@ -51,8 +51,13 @@ def compute_metrics(original, processed):
     ssim_value = calculate_ssim(original_np, processed_np, L=1)
     return psnr_value, ssim_value
 
-def bm3d_denoise(image, sigma):
-    return bm3d.bm3d(image, sigma)
+def estimate_noise_std(image):
+    """Estimate the noise standard deviation from a noisy image."""
+    return np.std(image - bm3d.bm3d(image, 0))
+
+def bm3d_denoise(image):
+    sigma_est = estimate_noise_std(image)
+    return bm3d.bm3d(image, sigma_est)
 
 def plot_example_images(example_images):
     num_levels = len(example_images)
@@ -105,8 +110,7 @@ def evaluate_model_and_plot(model, val_loader, device, model_path="best_denoisin
             psnr_predicted, ssim_predicted = compute_metrics(gt_image[j], predicted_image[j])
 
             degraded_np = denormalize(degraded_image[j].cpu().numpy().squeeze())
-            sigma = noise_level[j].item() / 255.0 if noise_level is not None else 0
-            bm3d_denoised = bm3d_denoise(degraded_np, sigma)
+            bm3d_denoised = bm3d_denoise(degraded_np)
             psnr_bm3d = calculate_psnr(denormalize(gt_image[j].cpu().numpy().squeeze()), bm3d_denoised, data_range=1.0)
             ssim_bm3d = calculate_ssim(denormalize(gt_image[j].cpu().numpy().squeeze()), bm3d_denoised, L=1)
 
