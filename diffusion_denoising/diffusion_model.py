@@ -31,18 +31,15 @@ def print_memory_stats(prefix=""):
 class UNet_S_Checkpointed(nn.Module):
     def __init__(self):
         super(UNet_S_Checkpointed, self).__init__()
-        self.enc1 = self.conv_block(2, 64)  # Change input channels to 2 (image + time step)
-        self.enc2 = self.conv_block(64, 128)
-        self.enc3 = self.conv_block(128, 256)
-        self.enc4 = self.conv_block(256, 512)
+        self.enc1 = self.conv_block(2, 32)  # Change input channels to 2 (image + time step)
+        self.enc2 = self.conv_block(32, 64)
+        self.enc3 = self.conv_block(64, 128)
         self.pool = nn.MaxPool2d(2)
-        self.upconv4 = self.upconv(512, 256)
-        self.upconv3 = self.upconv(256, 128)
-        self.upconv2 = self.upconv(128, 64)
-        self.dec4 = self.conv_block(512, 256)
-        self.dec3 = self.conv_block(256, 128)
-        self.dec2 = self.conv_block(128, 64)
-        self.dec1 = self.conv_block(64, 1, final_layer=True)
+        self.upconv3 = self.upconv(128, 64)
+        self.upconv2 = self.upconv(64, 32)
+        self.dec3 = self.conv_block(128, 64)
+        self.dec2 = self.conv_block(64, 32)
+        self.dec1 = self.conv_block(32, 1, final_layer=True)
 
     def conv_block(self, in_channels, out_channels, final_layer=False):
         if final_layer:
@@ -69,13 +66,10 @@ class UNet_S_Checkpointed(nn.Module):
         enc1 = cp.checkpoint(self.enc1, x, use_reentrant=False)
         enc2 = cp.checkpoint(self.enc2, self.pool(enc1), use_reentrant=False)
         enc3 = cp.checkpoint(self.enc3, self.pool(enc2), use_reentrant=False)
-        enc4 = cp.checkpoint(self.enc4, self.pool(enc3), use_reentrant=False)
-        dec4 = cp.checkpoint(self.dec4, torch.cat((self.upconv4(enc4), enc3), dim=1), use_reentrant=False)
-        dec3 = cp.checkpoint(self.dec3, torch.cat((self.upconv3(dec4), enc2), dim=1), use_reentrant=False)
+        dec3 = cp.checkpoint(self.dec3, torch.cat((self.upconv3(enc3), enc2), dim=1), use_reentrant=False)
         dec2 = cp.checkpoint(self.dec2, torch.cat((self.upconv2(dec3), enc1), dim=1), use_reentrant=False)
         dec1 = self.dec1(dec2)
         return dec1
-
 
 class DiffusionModel(nn.Module):
     def __init__(self, unet, timesteps=20):
