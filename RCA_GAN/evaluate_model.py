@@ -54,24 +54,28 @@ def compute_metrics(original, processed):
 def bm3d_denoise(image, sigma):
     return bm3d.bm3d(image, sigma)
 
-def plot_example_image(gt_image, degraded_image, predicted_image, bm3d_image):
-    fig, axs = plt.subplots(1, 4, figsize=(20, 5))
+def plot_example_images(example_images):
+    num_levels = len(example_images)
+    fig, axs = plt.subplots(num_levels, 4, figsize=(20, 5 * num_levels))
     
-    axs[0].imshow(gt_image, cmap='gray')
-    axs[0].set_title('Ground Truth')
-    axs[0].axis('off')
-    
-    axs[1].imshow(degraded_image, cmap='gray')
-    axs[1].set_title('Noisy')
-    axs[1].axis('off')
-    
-    axs[2].imshow(predicted_image, cmap='gray')
-    axs[2].set_title('Denoised (Model)')
-    axs[2].axis('off')
-    
-    axs[3].imshow(bm3d_image, cmap='gray')
-    axs[3].set_title('Denoised (BM3D)')
-    axs[3].axis('off')
+    for i, (sigma, images) in enumerate(example_images.items()):
+        gt_image, degraded_image, predicted_image, bm3d_image = images
+        
+        axs[i, 0].imshow(gt_image, cmap='gray')
+        axs[i, 0].set_title(f'Ground Truth (Sigma: {sigma})')
+        axs[i, 0].axis('off')
+        
+        axs[i, 1].imshow(degraded_image, cmap='gray')
+        axs[i, 1].set_title('Noisy')
+        axs[i, 1].axis('off')
+        
+        axs[i, 2].imshow(predicted_image, cmap='gray')
+        axs[i, 2].set_title('Denoised (Model)')
+        axs[i, 2].axis('off')
+        
+        axs[i, 3].imshow(bm3d_image, cmap='gray')
+        axs[i, 3].set_title('Denoised (BM3D)')
+        axs[i, 3].axis('off')
     
     plt.show()
 
@@ -81,8 +85,7 @@ def evaluate_model_and_plot(model, val_loader, device, model_path="best_denoisin
     model.eval()
 
     metrics = {'noise_level': [], 'psnr_degraded': [], 'psnr_predicted': [], 'psnr_bm3d': [], 'ssim_degraded': [], 'ssim_predicted': [], 'ssim_bm3d': []}
-
-    example_images = None
+    example_images = {}
 
     for i, data in enumerate(tqdm(val_loader, desc="Evaluating")):
         if include_noise_level:
@@ -115,8 +118,9 @@ def evaluate_model_and_plot(model, val_loader, device, model_path="best_denoisin
             metrics['ssim_predicted'].append(ssim_predicted)
             metrics['ssim_bm3d'].append(ssim_bm3d)
 
-            if example_images is None:
-                example_images = (gt_image[j].cpu().numpy().squeeze(), degraded_np, denormalize(predicted_image[j].cpu().numpy().squeeze()), bm3d_denoised)
+            sigma_level = int(noise_level[j].item())
+            if sigma_level not in example_images:
+                example_images[sigma_level] = (gt_image[j].cpu().numpy().squeeze(), degraded_np, denormalize(predicted_image[j].cpu().numpy().squeeze()), bm3d_denoised)
 
     noise_levels = np.array(metrics['noise_level'])
     psnr_degraded = np.array(metrics['psnr_degraded'])
@@ -158,8 +162,8 @@ def evaluate_model_and_plot(model, val_loader, device, model_path="best_denoisin
     plt.tight_layout()
     plt.show()
 
-    if example_images is not None:
-        plot_example_image(*example_images)
+    if example_images:
+        plot_example_images(example_images)
 
 if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() else "mps")
