@@ -17,6 +17,20 @@ sys.path.append(project_root)
 
 from dataset_creation.data_loader import load_data
 
+def denormalize(tensor, mean=0.5, std=0.5):
+    """
+    Denormalize a tensor that was normalized using mean and std.
+    
+    Args:
+        tensor (torch.Tensor): Normalized tensor.
+        mean (float): Mean used for normalization.
+        std (float): Standard deviation used for normalization.
+    
+    Returns:
+        torch.Tensor: Denormalized tensor.
+    """
+    return tensor * std + mean
+
 def calculate_ssim(X, Y, K1=0.01, K2=0.03, L=255):
     """
     Compute the Structural Similarity Index (SSIM) between two images using the formula provided.
@@ -58,8 +72,8 @@ def compute_metrics(original, processed):
     Returns:
         tuple: PSNR and SSIM values.
     """
-    original_np = original.cpu().numpy().squeeze()
-    processed_np = processed.cpu().numpy().squeeze()
+    original_np = denormalize(original.cpu().numpy().squeeze())
+    processed_np = denormalize(processed.cpu().numpy().squeeze())
     psnr_value = psnr(original_np, processed_np, data_range=processed_np.max() - processed_np.min())
     ssim_value = calculate_ssim(original_np, processed_np)
     return psnr_value, ssim_value
