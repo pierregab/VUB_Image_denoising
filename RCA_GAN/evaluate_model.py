@@ -6,7 +6,6 @@ from skimage.metrics import structural_similarity as ssim
 import numpy as np
 import os
 import sys
-from scipy.stats import norm
 from tqdm import tqdm
 
 from paper_gan import Generator
@@ -167,26 +166,28 @@ def evaluate_model_and_plot(model, val_loader, device, model_path="best_denoisin
     print("Average SSIM Degraded:", avg_ssim_degraded)
     print("Average SSIM Predicted:", avg_ssim_predicted)
 
+    # Plot PSNR and SSIM in subplots
+    fig, axs = plt.subplots(2, 1, figsize=(10, 12))
+
     # Plot PSNR
-    plt.figure(figsize=(10, 6))
-    plt.plot(unique_noise_levels, avg_psnr_degraded, 'o-', label='Degraded', color='red')
-    plt.plot(unique_noise_levels, avg_psnr_predicted, 'o-', label='Predicted', color='green')
-    plt.xlabel('Noise Standard Deviation')
-    plt.ylabel('PSNR')
-    plt.title('PSNR value variation curve')
-    plt.legend()
-    plt.grid()
-    plt.show()
+    axs[0].plot(unique_noise_levels, avg_psnr_degraded, 'o-', label='Degraded', color='red')
+    axs[0].plot(unique_noise_levels, avg_psnr_predicted, 'o-', label='Predicted', color='green')
+    axs[0].set_xlabel('Noise Standard Deviation')
+    axs[0].set_ylabel('PSNR')
+    axs[0].set_title('PSNR value variation curve')
+    axs[0].legend()
+    axs[0].grid()
 
     # Plot SSIM
-    plt.figure(figsize=(10, 6))
-    plt.plot(unique_noise_levels, avg_ssim_degraded, 'o-', label='Degraded', color='red')
-    plt.plot(unique_noise_levels, avg_ssim_predicted, 'o-', label='Predicted', color='green')
-    plt.xlabel('Noise Standard Deviation')
-    plt.ylabel('SSIM')
-    plt.title('SSIM value variation curve')
-    plt.legend()
-    plt.grid()
+    axs[1].plot(unique_noise_levels, avg_ssim_degraded, 'o-', label='Degraded', color='red')
+    axs[1].plot(unique_noise_levels, avg_ssim_predicted, 'o-', label='Predicted', color='green')
+    axs[1].set_xlabel('Noise Standard Deviation')
+    axs[1].set_ylabel('SSIM')
+    axs[1].set_title('SSIM value variation curve')
+    axs[1].legend()
+    axs[1].grid()
+
+    plt.tight_layout()
     plt.show()
 
 if __name__ == "__main__":
