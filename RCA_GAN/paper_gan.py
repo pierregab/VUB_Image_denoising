@@ -371,30 +371,13 @@ def initialize_weights(module):
     elif isinstance(module, ResidualBlock):
         module.initialize_weights()
 
-# Function to adjust learning rates
-def adjust_learning_rates(optimizer_G, optimizer_D, g_loss, d_loss, base_lr=1e-4):
-    if g_loss < d_loss:
-        for param_group in optimizer_G.param_groups:
-            param_group['lr'] = base_lr / 2
-        for param_group in optimizer_D.param_groups:
-            param_group['lr'] = base_lr * 2
-    elif d_loss < g_loss:
-        for param_group in optimizer_G.param_groups:
-            param_group['lr'] = base_lr * 2
-        for param_group in optimizer_D.param_groups:
-            param_group['lr'] = base_lr / 2
-    else:
-        for param_group in optimizer_G.param_groups:
-            param_group['lr'] = base_lr
-        for param_group in optimizer_D.param_groups:
-            param_group['lr'] = base_lr
-
 def train_rca_gan(train_loader, val_loader, num_epochs=1,
                     lambda_perceptual=1e-7, lambda_content=1e-4, lambda_texture=1e2, lambda_adversarial=1,
                     lr_G=1e-3, lr_D=1e-6, betas_G=(0.5, 0.999), betas_D=(0.9, 0.999),
                     init_type='normal', log_dir='runs/paper_gan', use_tensorboard=True,
                     debug=False, device=torch.device("cuda" if torch.cuda.is_available() else "mps"),
-                    early_stopping_patience=None, trial=None, conv_block_channels=[32, 16, 8, 4]):
+                    early_stopping_patience=None, trial=None, conv_block_channels=[32, 16, 8, 4],
+                    g_steps_per_epoch=1, d_steps_per_epoch=1):
 
     # Initialize the models
     in_channels = 1
@@ -428,19 +411,22 @@ def train_rca_gan(train_loader, val_loader, num_epochs=1,
             gt_images = gt_images.to(device)
 
             # Train Discriminator
-            optimizer_D.zero_grad()
-            gen_clean, _ = generator(degraded_images)
-            real_data = gt_images
-            fake_data = gen_clean.detach()
-            d_loss = multimodal_loss.adversarial_loss.discriminator_loss(real_data, fake_data)
-            d_loss.backward()
-            optimizer_D.step()
+            for _ in range(d_steps_per_epoch):
+                optimizer_D.zero_grad()
+                gen_clean, _ = generator(degraded_images)
+                real_data = gt_images
+                fake_data = gen_clean.detach()
+                d_loss = multimodal_loss.adversarial_loss.discriminator_loss(real_data, fake_data)
+                d_loss.backward()
+                optimizer_D.step()
 
             # Train Generator
-            optimizer_G.zero_grad()
-            g_loss = multimodal_loss(gen_clean, gt_images, degraded_images)
-            g_loss.backward()
-            optimizer_G.step()
+            for _ in range(g_steps_per_epoch):
+                optimizer_G.zero_grad()
+                gen_clean, _ = generator(degraded_images)
+                g_loss = multimodal_loss(gen_clean, gt_images, degraded_images)
+                g_loss.backward()
+                optimizer_G.step()
 
             if i % 1 == 0:
                 print(f"[Epoch {epoch}/{num_epochs}] [Batch {i}/{len(train_loader)}] [D loss: {d_loss.item()}] [G loss: {g_loss.item()}]")

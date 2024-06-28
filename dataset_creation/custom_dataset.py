@@ -12,16 +12,22 @@ class CustomDataset(Dataset):
     A custom dataset class for loading high-resolution images, extracting non-overlapping patches, and generating noisy versions.
     """
 
-    def __init__(self, image_folder, transform=None):
+    def __init__(self, image_folder, transform=None, include_noise_level=False, noise_levels=None):
         """
         Args:
             image_folder (str): Directory with all the images.
             transform (callable, optional): Optional transform to be applied on a sample.
+            include_noise_level (bool): Whether to include noise level in the returned samples.
+            noise_levels (list): List of noise levels to be applied.
         """
         self.image_paths = self._get_image_paths(image_folder)
         self.transform = transform
-        self.noise_levels = [15, 25, 50]
+        self.noise_levels = noise_levels if noise_levels is not None else [15, 25, 50]  # Default noise levels
         self.patch_pairs = self._extract_patches()
+        self.include_noise_level = include_noise_level
+
+        # Debug: Print initialized noise levels
+        print("Initialized noise levels:", self.noise_levels)
 
     def _get_image_paths(self, folder):
         """
@@ -80,4 +86,7 @@ class CustomDataset(Dataset):
             random.seed(seed)
             noisy_patch = self.transform(noisy_patch)
 
-        return noisy_patch, gt_patch
+        if self.include_noise_level:
+            return noisy_patch, gt_patch, noise_level
+        else:
+            return noisy_patch, gt_patch

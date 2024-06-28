@@ -39,13 +39,9 @@ def plot_losses(train_losses, val_losses, loss_names, output_path):
     plt.close()
 
 def objective(trial, train_loader, val_loader):
-    # Tune conv_block_channels
-    conv_block_channels = [
-        trial.suggest_int('conv_block_channels_0', 8, 64, log=True),
-        trial.suggest_int('conv_block_channels_1', 4, 32, log=True),
-        trial.suggest_int('conv_block_channels_2', 2, 16, log=True),
-        trial.suggest_int('conv_block_channels_3', 1, 8, log=True)
-    ]
+    # Tune g_steps_per_epoch and d_steps_per_epoch
+    g_steps_per_epoch = trial.suggest_int('g_steps_per_epoch', 1, 4)
+    d_steps_per_epoch = trial.suggest_int('d_steps_per_epoch', 1, 4)
 
     # Fixed hyperparameters
     lambda_perceptual = 1e-7
@@ -55,17 +51,21 @@ def objective(trial, train_loader, val_loader):
     lr_G = 1e-3
     lr_D = 1e-6
 
+    conv_block_channels = [32, 16, 8, 4]
+
     log_dir = f"runs/paper_gan/optuna_trial_{trial.number}"
     os.makedirs(log_dir, exist_ok=True)
     
     generator, discriminator = train_rca_gan(
-        train_loader, val_loader, num_epochs=20,
+        train_loader, val_loader, num_epochs=10,
         lambda_perceptual=lambda_perceptual, lambda_content=lambda_content,
         lambda_texture=lambda_texture, lambda_adversarial=lambda_adversarial,
         lr_G=lr_G, lr_D=lr_D, log_dir=log_dir,
         early_stopping_patience=5,  # Adding early stopping patience
         trial=trial,  # Pass the trial for pruning
-        conv_block_channels=conv_block_channels  # Pass the tuned conv_block_channels
+        conv_block_channels=conv_block_channels,  # Fixed conv_block_channels
+        g_steps_per_epoch=g_steps_per_epoch,  # Pass the tuned g_steps_per_epoch
+        d_steps_per_epoch=d_steps_per_epoch  # Pass the tuned d_steps_per_epoch
     )
 
     multimodal_loss = MultimodalLoss(discriminator, lambda_perceptual, lambda_content, lambda_texture, lambda_adversarial).to(device)
@@ -96,10 +96,10 @@ def main():
 
     # Use num_workers=8 to utilize multiple workers for data loading
     train_loader, val_loader = load_data(image_folder, batch_size=8, num_workers=8, 
-                                         validation_split=0.2, augment=False, dataset_percentage=0.001)
+                                         validation_split=0.2, augment=False, dataset_percentage=0.0002)
 
     study = optuna.create_study(direction='minimize', pruner=optuna.pruners.MedianPruner(n_startup_trials=5))
-    study.optimize(lambda trial: objective(trial, train_loader, val_loader), n_trials=50)
+    study.optimize(lambda trial: objective(trial, train_loader, val_loader), n_trials=20)
 
     print("Hyperparameter tuning finished.")
     print("Best hyperparameters:", study.best_params)

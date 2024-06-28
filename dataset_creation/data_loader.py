@@ -4,7 +4,7 @@ from torch.utils.data import DataLoader, random_split
 import matplotlib.pyplot as plt
 from dataset_creation.custom_dataset import CustomDataset  # Ensure custom_dataset.py is in the same directory or in your PYTHONPATH
 
-def load_data(image_folder, batch_size=4, num_workers=4, validation_split=0.2, augment=False, dataset_percentage=1.0, only_validation=False):
+def load_data(image_folder, batch_size=4, num_workers=4, validation_split=0.2, augment=False, dataset_percentage=1.0, only_validation=False, include_noise_level=False, train_noise_levels=None, val_noise_levels=None):
     """
     Load and preprocess the dataset, returning training and validation DataLoaders.
 
@@ -16,6 +16,9 @@ def load_data(image_folder, batch_size=4, num_workers=4, validation_split=0.2, a
     - augment (bool): Whether to apply data augmentation to the training set.
     - dataset_percentage (float): Percentage of the total dataset to use (0.0 < dataset_percentage <= 1.0).
     - only_validation (bool): If True, load only validation data without splitting.
+    - include_noise_level (bool): Whether to include noise level in the returned samples.
+    - train_noise_levels (list): List of noise levels to be used for training.
+    - val_noise_levels (list): List of noise levels to be used for validation.
 
     Returns:
     - train_loader (DataLoader): DataLoader for the training dataset (None if only_validation is True).
@@ -39,24 +42,30 @@ def load_data(image_folder, batch_size=4, num_workers=4, validation_split=0.2, a
     # Choose transform based on the augment parameter
     transform = augmentation_transform if augment else basic_transform
 
-    dataset = CustomDataset(image_folder, transform=transform)
+    if only_validation:
+        val_dataset = CustomDataset(image_folder, transform=transform, include_noise_level=include_noise_level, noise_levels=val_noise_levels)
+        val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers)
+        return None, val_loader
+
+    train_dataset = CustomDataset(image_folder, transform=transform, include_noise_level=include_noise_level, noise_levels=train_noise_levels)
+    val_dataset = CustomDataset(image_folder, transform=transform, include_noise_level=include_noise_level, noise_levels=val_noise_levels)
+
+    # Debug: Print noise levels used in datasets
+    print("Train noise levels:", train_noise_levels)
+    print("Validation noise levels:", val_noise_levels)
 
     # Determine the size of the dataset to use
-    total_size = len(dataset)
+    total_size = len(train_dataset)
     subset_size = int(total_size * dataset_percentage)
 
     if subset_size < total_size:
-        dataset, _ = random_split(dataset, [subset_size, total_size - subset_size])
-
-    if only_validation:
-        val_loader = DataLoader(dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers)
-        return None, val_loader
+        train_dataset, _ = random_split(train_dataset, [subset_size, total_size - subset_size])
 
     # Split dataset into train and validation
-    train_size = int((1 - validation_split) * len(dataset))
-    val_size = len(dataset) - train_size
+    train_size = int((1 - validation_split) * len(train_dataset))
+    val_size = len(train_dataset) - train_size
 
-    train_dataset, val_dataset = random_split(dataset, [train_size, val_size])
+    train_dataset, val_dataset = random_split(train_dataset, [train_size, val_size])
 
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers)
     val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers)
