@@ -39,7 +39,7 @@ def calculate_ssim(X, Y, K1=0.01, K2=0.03, L=255):
     mu_Y = np.mean(Y)
     sigma_X = np.std(X)
     sigma_Y = np.std(Y)
-    sigma_XY = np.cov(X.flatten(), Y.flatten())[0, 1]
+    sigma_XY = np.mean((X - mu_X) * (Y - mu_Y))
     
     l = (2 * mu_X * mu_Y + C1) / (mu_X ** 2 + mu_Y ** 2 + C1)
     c = (2 * sigma_X * sigma_Y + C2) / (sigma_X ** 2 + sigma_Y ** 2 + C2)
