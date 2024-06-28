@@ -3,11 +3,9 @@ import torch.nn as nn
 from torch.utils.data import DataLoader
 import matplotlib.pyplot as plt
 from skimage.metrics import peak_signal_noise_ratio as psnr
-from skimage.metrics import structural_similarity as ssim
 import numpy as np
 import os
 import sys
-from scipy.stats import norm
 from tqdm import tqdm
 
 from paper_gan import Generator
@@ -74,6 +72,11 @@ def compute_metrics(original, processed):
     """
     original_np = denormalize(original.cpu().numpy().squeeze())
     processed_np = denormalize(processed.cpu().numpy().squeeze())
+    
+    # Debug: Print the dynamic range of the images
+    print(f"Original Image: min={original_np.min()}, max={original_np.max()}")
+    print(f"Processed Image: min={processed_np.min()}, max={processed_np.max()}")
+    
     psnr_value = psnr(original_np, processed_np, data_range=1.0)  # data_range should match the dynamic range of the images
     ssim_value = calculate_ssim(original_np, processed_np, L=1)  # L should match the dynamic range of the images
     return psnr_value, ssim_value
