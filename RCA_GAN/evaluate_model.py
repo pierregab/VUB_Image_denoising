@@ -44,8 +44,8 @@ def calculate_ssim(X, Y, K1=0.01, K2=0.03, L=1):
     Returns:
         float: SSIM value.
     """
-    C1 = (K1 * L) 
-    C2 = (K2 * L) 
+    C1 = (K1 * L) ** 2
+    C2 = (K2 * L) ** 2
     C3 = C2 / 2
     
     mu_X = np.mean(X)
@@ -91,10 +91,6 @@ def compute_metrics(original, processed):
     """
     original_np = denormalize(original.cpu().numpy().squeeze())
     processed_np = denormalize(processed.cpu().numpy().squeeze())
-    
-    # Debug: Print the dynamic range of the images
-    print(f"Original Image: min={original_np.min()}, max={original_np.max()}")
-    print(f"Processed Image: min={processed_np.min()}, max={processed_np.max()}")
     
     psnr_value = calculate_psnr(original_np, processed_np, data_range=1.0)  # data_range should match the dynamic range of the images
     ssim_value = calculate_ssim(original_np, processed_np, L=1)  # L should match the dynamic range of the images
