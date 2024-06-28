@@ -17,6 +17,36 @@ sys.path.append(project_root)
 
 from dataset_creation.data_loader import load_data
 
+def calculate_ssim(X, Y, K1=0.01, K2=0.03, L=255):
+    """
+    Compute the Structural Similarity Index (SSIM) between two images using the formula provided.
+    
+    Args:
+        X (np.array): Original ground truth image.
+        Y (np.array): Processed image to compare.
+        K1 (float): Constant for luminance (default: 0.01).
+        K2 (float): Constant for contrast (default: 0.03).
+        L (float): Dynamic range of the pixel values (default: 255).
+    
+    Returns:
+        float: SSIM value.
+    """
+    C1 = (K1 * L) ** 2
+    C2 = (K2 * L) ** 2
+    C3 = C2 / 2
+    
+    mu_X = np.mean(X)
+    mu_Y = np.mean(Y)
+    sigma_X = np.std(X)
+    sigma_Y = np.std(Y)
+    sigma_XY = np.cov(X.flatten(), Y.flatten())[0, 1]
+    
+    l = (2 * mu_X * mu_Y + C1) / (mu_X ** 2 + mu_Y ** 2 + C1)
+    c = (2 * sigma_X * sigma_Y + C2) / (sigma_X ** 2 + sigma_Y ** 2 + C2)
+    s = (sigma_XY + C3) / (sigma_X * sigma_Y + C3)
+    
+    return l * c * s
+
 def compute_metrics(original, processed):
     """
     Compute PSNR and SSIM between original and processed images.
@@ -31,7 +61,7 @@ def compute_metrics(original, processed):
     original_np = original.cpu().numpy().squeeze()
     processed_np = processed.cpu().numpy().squeeze()
     psnr_value = psnr(original_np, processed_np, data_range=processed_np.max() - processed_np.min())
-    ssim_value = ssim(original_np, processed_np, data_range=processed_np.max() - processed_np.min())
+    ssim_value = calculate_ssim(original_np, processed_np)
     return psnr_value, ssim_value
 
 def evaluate_model_and_plot(model, val_loader, device, model_path="best_denoising_unet_b&w.pth", include_noise_level=False):
