@@ -2,10 +2,11 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
 import matplotlib.pyplot as plt
-from skimage.metrics import peak_signal_noise_ratio as psnr
+from skimage.metrics import structural_similarity as ssim
 import numpy as np
 import os
 import sys
+from scipy.stats import norm
 from tqdm import tqdm
 
 from paper_gan import Generator
@@ -59,6 +60,24 @@ def calculate_ssim(X, Y, K1=0.01, K2=0.03, L=1):
     
     return l * c * s
 
+def calculate_psnr(X, Y, data_range=1.0):
+    """
+    Compute the Peak Signal-to-Noise Ratio (PSNR) between two images using the formula provided.
+    
+    Args:
+        X (np.array): Original ground truth image.
+        Y (np.array): Processed image to compare.
+        data_range (float): The data range of the input images.
+    
+    Returns:
+        float: PSNR value.
+    """
+    mse = np.mean((X - Y) ** 2)
+    if mse == 0:
+        return float('inf')
+    psnr_value = 10 * np.log10((data_range ** 2) / mse)
+    return psnr_value
+
 def compute_metrics(original, processed):
     """
     Compute PSNR and SSIM between original and processed images.
@@ -77,7 +96,7 @@ def compute_metrics(original, processed):
     print(f"Original Image: min={original_np.min()}, max={original_np.max()}")
     print(f"Processed Image: min={processed_np.min()}, max={processed_np.max()}")
     
-    psnr_value = psnr(original_np, processed_np, data_range=1.0)  # data_range should match the dynamic range of the images
+    psnr_value = calculate_psnr(original_np, processed_np, data_range=1.0)  # data_range should match the dynamic range of the images
     ssim_value = calculate_ssim(original_np, processed_np, L=1)  # L should match the dynamic range of the images
     return psnr_value, ssim_value
 
