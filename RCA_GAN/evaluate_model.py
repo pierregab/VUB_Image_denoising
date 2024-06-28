@@ -51,7 +51,7 @@ def compute_metrics(original, processed):
     ssim_value = calculate_ssim(original_np, processed_np, L=1)
     return psnr_value, ssim_value
 
-def bm3d_denoise(image, sigma):
+def bm3d_denoise(image):
     return bm3d.bm3d(image, sigma_psd=30/255, stage_arg=bm3d.BM3DStages.ALL_STAGES)
 
 def plot_example_images(example_images):
