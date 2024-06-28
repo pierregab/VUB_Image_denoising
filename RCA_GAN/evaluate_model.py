@@ -51,13 +51,8 @@ def compute_metrics(original, processed):
     ssim_value = calculate_ssim(original_np, processed_np, L=1)
     return psnr_value, ssim_value
 
-def estimate_noise_std(image):
-    """Estimate the noise standard deviation from a noisy image."""
-    return np.std(image - bm3d.bm3d(image, 0))
-
-def bm3d_denoise(image):
-    sigma_est = estimate_noise_std(image)
-    return bm3d.bm3d(image, sigma_est)
+def bm3d_denoise(image, sigma):
+    return bm3d.bm3d(image, sigma_psd=30/255, stage_arg=bm3d.BM3DStages.ALL_STAGES)
 
 def plot_example_images(example_images):
     num_levels = len(example_images)
