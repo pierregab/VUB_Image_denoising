@@ -31,7 +31,7 @@ def denormalize(tensor, mean=0.5, std=0.5):
     """
     return tensor * std + mean
 
-def calculate_ssim(X, Y, K1=0.01, K2=0.03, L=255):
+def calculate_ssim(X, Y, K1=0.01, K2=0.03, L=1):
     """
     Compute the Structural Similarity Index (SSIM) between two images using the formula provided.
     
@@ -40,7 +40,7 @@ def calculate_ssim(X, Y, K1=0.01, K2=0.03, L=255):
         Y (np.array): Processed image to compare.
         K1 (float): Constant for luminance (default: 0.01).
         K2 (float): Constant for contrast (default: 0.03).
-        L (float): Dynamic range of the pixel values (default: 255).
+        L (float): Dynamic range of the pixel values (default: 1 for normalized images).
     
     Returns:
         float: SSIM value.
@@ -74,8 +74,8 @@ def compute_metrics(original, processed):
     """
     original_np = denormalize(original.cpu().numpy().squeeze())
     processed_np = denormalize(processed.cpu().numpy().squeeze())
-    psnr_value = psnr(original_np, processed_np, data_range=processed_np.max() - processed_np.min())
-    ssim_value = calculate_ssim(original_np, processed_np)
+    psnr_value = psnr(original, processed, data_range=1.0)  # data_range should match the dynamic range of the images
+    ssim_value = calculate_ssim(original, processed, L=1)  # L should match the dynamic range of the images
     return psnr_value, ssim_value
 
 def evaluate_model_and_plot(model, val_loader, device, model_path="best_denoising_unet_b&w.pth", include_noise_level=False):
