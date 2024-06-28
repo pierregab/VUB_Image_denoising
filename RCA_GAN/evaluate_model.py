@@ -45,8 +45,8 @@ def calculate_ssim(X, Y, K1=0.01, K2=0.03, L=1):
     Returns:
         float: SSIM value.
     """
-    C1 = (K1 * L) 
-    C2 = (K2 * L) 
+    C1 = (K1 * L) ** 2
+    C2 = (K2 * L) ** 2
     C3 = C2 / 2
     
     mu_X = np.mean(X)
