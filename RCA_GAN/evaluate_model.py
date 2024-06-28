@@ -7,6 +7,7 @@ import numpy as np
 import os
 import sys
 from tqdm import tqdm
+import bm3d
 
 from paper_gan import Generator
 
@@ -95,6 +96,19 @@ def compute_metrics(original, processed):
     ssim_value = calculate_ssim(original_np, processed_np, L=1)  # L should match the dynamic range of the images
     return psnr_value, ssim_value
 
+def bm3d_denoise(image, sigma):
+    """
+    Apply BM3D denoising algorithm to an image.
+
+    Args:
+        image (np.array): Input degraded image.
+        sigma (float): Standard deviation of the noise.
+
+    Returns:
+        np.array: Denoised image.
+    """
+    return bm3d.bm3d(image, sigma)
+
 def evaluate_model_and_plot(model, val_loader, device, model_path="best_denoising_unet_b&w.pth", include_noise_level=False):
     """
     Evaluate a model on the validation set and compute metrics.
@@ -115,7 +129,7 @@ def evaluate_model_and_plot(model, val_loader, device, model_path="best_denoisin
     model.eval()
 
     # Dictionary to store PSNR and SSIM values for different noise levels
-    metrics = {'noise_level': [], 'psnr_degraded': [], 'psnr_predicted': [], 'ssim_degraded': [], 'ssim_predicted': []}
+    metrics = {'noise_level': [], 'psnr_degraded': [], 'psnr_predicted': [], 'psnr_bm3d': [], 'ssim_degraded': [], 'ssim_predicted': [], 'ssim_bm3d': []}
 
     # Use tqdm to add a progress bar
     for i, data in enumerate(tqdm(val_loader, desc="Evaluating")):
@@ -135,11 +149,20 @@ def evaluate_model_and_plot(model, val_loader, device, model_path="best_denoisin
             psnr_degraded, ssim_degraded = compute_metrics(gt_image[j], degraded_image[j])
             psnr_predicted, ssim_predicted = compute_metrics(gt_image[j], predicted_image[j])
 
+            # BM3D Denoising
+            degraded_np = denormalize(degraded_image[j].cpu().numpy().squeeze())
+            sigma = noise_level[j].item() / 255.0 if noise_level is not None else 0
+            bm3d_denoised = bm3d_denoise(degraded_np, sigma)
+            psnr_bm3d = calculate_psnr(denormalize(gt_image[j].cpu().numpy().squeeze()), bm3d_denoised, data_range=1.0)
+            ssim_bm3d = calculate_ssim(denormalize(gt_image[j].cpu().numpy().squeeze()), bm3d_denoised, L=1)
+
             metrics['noise_level'].append(noise_level[j].item() if noise_level is not None else 0)
             metrics['psnr_degraded'].append(psnr_degraded)
             metrics['psnr_predicted'].append(psnr_predicted)
+            metrics['psnr_bm3d'].append(psnr_bm3d)
             metrics['ssim_degraded'].append(ssim_degraded)
             metrics['ssim_predicted'].append(ssim_predicted)
+            metrics['ssim_bm3d'].append(ssim_bm3d)
 
     # Debug: Print unique noise levels
     print("Unique noise levels in validation set:", np.unique(metrics['noise_level']))
@@ -148,8 +171,10 @@ def evaluate_model_and_plot(model, val_loader, device, model_path="best_denoisin
     noise_levels = np.array(metrics['noise_level'])
     psnr_degraded = np.array(metrics['psnr_degraded'])
     psnr_predicted = np.array(metrics['psnr_predicted'])
+    psnr_bm3d = np.array(metrics['psnr_bm3d'])
     ssim_degraded = np.array(metrics['ssim_degraded'])
     ssim_predicted = np.array(metrics['ssim_predicted'])
+    ssim_bm3d = np.array(metrics['ssim_bm3d'])
 
     # Unique noise levels
     unique_noise_levels = sorted(np.unique(noise_levels))
@@ -157,14 +182,18 @@ def evaluate_model_and_plot(model, val_loader, device, model_path="best_denoisin
     # Average PSNR and SSIM for each noise level
     avg_psnr_degraded = [np.mean(psnr_degraded[noise_levels == nl]) for nl in unique_noise_levels]
     avg_psnr_predicted = [np.mean(psnr_predicted[noise_levels == nl]) for nl in unique_noise_levels]
+    avg_psnr_bm3d = [np.mean(psnr_bm3d[noise_levels == nl]) for nl in unique_noise_levels]
     avg_ssim_degraded = [np.mean(ssim_degraded[noise_levels == nl]) for nl in unique_noise_levels]
     avg_ssim_predicted = [np.mean(ssim_predicted[noise_levels == nl]) for nl in unique_noise_levels]
+    avg_ssim_bm3d = [np.mean(ssim_bm3d[noise_levels == nl]) for nl in unique_noise_levels]
 
     # Debug: Print averaged metrics
     print("Average PSNR Degraded:", avg_psnr_degraded)
     print("Average PSNR Predicted:", avg_psnr_predicted)
+    print("Average PSNR BM3D:", avg_psnr_bm3d)
     print("Average SSIM Degraded:", avg_ssim_degraded)
     print("Average SSIM Predicted:", avg_ssim_predicted)
+    print("Average SSIM BM3D:", avg_ssim_bm3d)
 
     # Plot PSNR and SSIM in subplots
     fig, axs = plt.subplots(2, 1, figsize=(10, 12))
@@ -172,6 +201,7 @@ def evaluate_model_and_plot(model, val_loader, device, model_path="best_denoisin
     # Plot PSNR
     axs[0].plot(unique_noise_levels, avg_psnr_degraded, 'o-', label='Degraded', color='red')
     axs[0].plot(unique_noise_levels, avg_psnr_predicted, 'o-', label='Predicted', color='green')
+    axs[0].plot(unique_noise_levels, avg_psnr_bm3d, 'o-', label='BM3D', color='blue')
     axs[0].set_xlabel('Noise Standard Deviation')
     axs[0].set_ylabel('PSNR')
     axs[0].set_title('PSNR value variation curve')
@@ -181,6 +211,7 @@ def evaluate_model_and_plot(model, val_loader, device, model_path="best_denoisin
     # Plot SSIM
     axs[1].plot(unique_noise_levels, avg_ssim_degraded, 'o-', label='Degraded', color='red')
     axs[1].plot(unique_noise_levels, avg_ssim_predicted, 'o-', label='Predicted', color='green')
+    axs[1].plot(unique_noise_levels, avg_ssim_bm3d, 'o-', label='BM3D', color='blue')
     axs[1].set_xlabel('Noise Standard Deviation')
     axs[1].set_ylabel('SSIM')
     axs[1].set_title('SSIM value variation curve')
@@ -199,7 +230,7 @@ if __name__ == "__main__":
     train_noise_levels = [10, 20, 30, 40, 50, 60, 70, 80]
     val_noise_levels = [10, 20, 30, 40, 50, 60, 70, 80]
 
-    train_loader, val_loader = load_data(image_folder, batch_size=1, num_workers=8, validation_split=0.5, augment=False, dataset_percentage=1, only_validation=False, include_noise_level=True, train_noise_levels=train_noise_levels, val_noise_levels=val_noise_levels)
+    train_loader, val_loader = load_data(image_folder, batch_size=1, num_workers=8, validation_split=0.5, augment=False, dataset_percentage=0.1, only_validation=False, include_noise_level=True, train_noise_levels=train_noise_levels, val_noise_levels=val_noise_levels)
 
     # Instantiate the model
     in_channels = 1
