@@ -6,3 +6,4 @@ evaluate_SIDD/ValidationGtBlocksSrgb.mat
 evaluate_SIDD/ValidationGtBlocksRaw.mat
 evaluate_SIDD/ValidationNoisyBlocksRaw.mat
 evaluate_SIDD/BenchmarkBlocks32.mat
+checkpoints/
