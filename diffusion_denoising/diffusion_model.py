@@ -72,7 +72,7 @@ class UNet_S_Checkpointed(nn.Module):
         return dec1
 
 class DiffusionModel(nn.Module):
-    def __init__(self, unet, timesteps=20):
+    def __init__(self, unet, timesteps=70):
         super(DiffusionModel, self).__init__()
         self.unet = unet
         self.timesteps = timesteps
@@ -118,62 +118,98 @@ def train_step_checkpointed(model, clean_images, noisy_images, optimizer):
     model.train()
     optimizer.zero_grad()
     
+    batch_size = clean_images.size(0)
     timesteps = model.timesteps
-    clean_images, noisy_images = clean_images.to(device), noisy_images.to(device)
     
-    denoised_images = model(clean_images, noisy_images, timesteps)
-    loss = charbonnier_loss(denoised_images, clean_images)
+    # Sample a random timestep uniformly for each image in the batch
+    t = torch.randint(0, timesteps + 1, (batch_size,), device=clean_images.device).float()
+    
+    # Normalize the timestep
+    t_normalized = t / timesteps
+    
+    # Expand the timestep tensor to match the image dimensions
+    t_tensor = t_normalized.view(batch_size, 1, 1, 1).expand(-1, 1, clean_images.size(2), clean_images.size(3))
+    
+    # Move t_tensor to the same device as the model
+    t_tensor = t_tensor.to(device)
+    
+    # Interpolate the noisy image
+    alpha = t_tensor
+    interpolated_images = alpha * noisy_images + (1 - alpha) * clean_images
+    
+    # Move interpolated_images to the same device as the model
+    interpolated_images = interpolated_images.to(device)
+    
+    # Denoise the interpolated image
+    denoised_images = model.unet(interpolated_images, t_tensor)
+    
+    # Calculate the loss
+    loss = charbonnier_loss(denoised_images, clean_images.to(device))
     loss.backward()
     optimizer.step()
     
     return loss.item()
 
+
 def train_model_checkpointed(model, train_loader, optimizer, writer, num_epochs=10):
     for epoch in range(num_epochs):
+        # Training phase
+        model.train()
         for batch_idx, (noisy_images, clean_images) in enumerate(train_loader):
+            noisy_images, clean_images = noisy_images.to(device), clean_images.to(device)
             loss = train_step_checkpointed(model, clean_images, noisy_images, optimizer)
             print(f"Epoch [{epoch + 1}/{num_epochs}], Batch [{batch_idx + 1}/{len(train_loader)}], Loss: {loss:.4f}")
             
             writer.add_scalar('Loss/train', loss, epoch * len(train_loader) + batch_idx)
         
+        # Validation phase
         model.eval()
+        validation_loss = 0
         with torch.no_grad():
-            for batch_idx, (noisy_images, clean_images) in enumerate(train_loader):
-                clean_images, noisy_images = clean_images.to(device), noisy_images.to(device)
-                denoised_images = model(clean_images, noisy_images, model.timesteps)
+            for batch_idx, (noisy_images, clean_images) in enumerate(val_loader):
+                noisy_images, clean_images = noisy_images.to(device), clean_images.to(device)
+
+                # Generate denoised images using only the noisy images
+                denoised_images = model.improved_sampling(noisy_images)
                 
+                # Calculate validation loss
+                loss = charbonnier_loss(denoised_images, clean_images)
+                validation_loss += loss.item()
+
+                # Denormalize images for visualization
                 clean_images = denormalize(clean_images.cpu())
                 noisy_images = denormalize(noisy_images.cpu())
                 denoised_images = denormalize(denoised_images.cpu())
                 
+                # Create image grids
                 grid_clean = make_grid(clean_images, nrow=4, normalize=True)
                 grid_noisy = make_grid(noisy_images, nrow=4, normalize=True)
                 grid_denoised = make_grid(denoised_images, nrow=4, normalize=True)
                 
+                # Add images to TensorBoard
                 writer.add_image(f'Epoch_{epoch + 1}/Clean Images', grid_clean, epoch + 1)
                 writer.add_image(f'Epoch_{epoch + 1}/Noisy Images', grid_noisy, epoch + 1)
                 writer.add_image(f'Epoch_{epoch + 1}/Denoised Images', grid_denoised, epoch + 1)
              
                 if batch_idx >= 0:  # Change this if you want more batches
                     break
+
+        # Log validation loss
+        validation_loss /= len(val_loader)
+        print(f"Epoch [{epoch + 1}/{num_epochs}], Validation Loss: {validation_loss:.4f}")
+        writer.add_scalar('Loss/validation', validation_loss, epoch + 1)
         
         writer.flush()
 
-        # Save the model checkpoint (state_dict) after each epoch
-        checkpoint_path = os.path.join("checkpoints", f"diffusion_model_checkpointed_epoch_{epoch + 1}.pth")
-        os.makedirs(os.path.dirname(checkpoint_path), exist_ok=True)
-        torch.save({
-            'epoch': epoch + 1,
-            'model_state_dict': model.state_dict(),
-            'optimizer_state_dict': optimizer.state_dict(),
-            'loss': loss,
-        }, checkpoint_path)
-        print(f"Model checkpoint saved at {checkpoint_path} after epoch {epoch + 1}")
+    # Save the model checkpoint
+    checkpoint_path = os.path.join("checkpoints", "diffusion_model_checkpointed.pth")
+    os.makedirs(os.path.dirname(checkpoint_path), exist_ok=True)
+    torch.save({
+        'model_state_dict': model.state_dict(),
+        'optimizer_state_dict': optimizer.state_dict()
+    }, checkpoint_path)
+    print(f"Model checkpoint saved at {checkpoint_path}")
 
-        # Save the entire model after each epoch
-        full_model_path = os.path.join("checkpoints", f"diffusion_model_checkpointed_full_epoch_{epoch + 1}.pth")
-        torch.save(model, full_model_path)
-        print(f"Full model saved at {full_model_path} after epoch {epoch + 1}")
 
 def start_tensorboard(log_dir):
     try:
@@ -193,6 +229,6 @@ if __name__ == "__main__":
     start_tensorboard(log_dir)
     
     image_folder = 'DIV2K_train_HR.nosync'
-    train_loader, val_loader = load_data(image_folder, batch_size=2, augment=False, dataset_percentage=0.1)
-    train_model_checkpointed(model_checkpointed, train_loader, optimizer, writer, num_epochs=30)
+    train_loader, val_loader = load_data(image_folder, batch_size=32, augment=False, dataset_percentage=0.01)
+    train_model_checkpointed(model_checkpointed, train_loader, optimizer, writer, num_epochs=50)
     writer.close()

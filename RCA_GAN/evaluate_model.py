@@ -97,7 +97,7 @@ def evaluate_model_and_plot(diffusion_model_path, unet_model_path, val_loader, d
 
         with torch.no_grad():
             t = torch.randint(0, diffusion_model.timesteps, (1,), device=device).float() / diffusion_model.timesteps
-            predicted_diffusion = diffusion_model(gt_image, degraded_image, t)
+            predicted_diffusion = diffusion_model.improved_sampling(degraded_image)
             predicted_unet = unet_model(degraded_image)
 
         for j in range(degraded_image.size(0)):
