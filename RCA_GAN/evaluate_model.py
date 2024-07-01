@@ -207,6 +207,6 @@ if __name__ == "__main__":
     train_noise_levels = [10, 20, 30, 40, 50, 60, 70, 80]
     val_noise_levels = [10, 20, 30, 40, 50, 60, 70, 80]
 
-    train_loader, val_loader = load_data(image_folder, batch_size=1, num_workers=8, validation_split=0.5, augment=False, dataset_percentage=0.1, only_validation=False, include_noise_level=True, train_noise_levels=train_noise_levels, val_noise_levels=val_noise_levels)
+    train_loader, val_loader = load_data(image_folder, batch_size=1, num_workers=8, validation_split=0.5, augment=False, dataset_percentage=0.01, only_validation=False, include_noise_level=True, train_noise_levels=train_noise_levels, val_noise_levels=val_noise_levels)
 
     evaluate_model_and_plot(diffusion_model_path="checkpoints/diffusion_model_checkpointed_full_epoch_1.pth", unet_model_path="checkpoints/unet_denoising.pth", val_loader=val_loader, device=device, include_noise_level=True, use_bm3d=False)
