@@ -7,7 +7,6 @@ import numpy as np
 import os
 import sys
 from tqdm import tqdm
-from skimage.metrics import structural_similarity as ssim
 
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 sys.path.append(project_root)
@@ -94,7 +93,8 @@ def evaluate_model_and_plot(diffusion_model_path, unet_model_path, val_loader, d
         gt_image = gt_image.to(device)
 
         with torch.no_grad():
-            predicted_diffusion = diffusion_model(degraded_image)
+            t = torch.randint(0, diffusion_model.timesteps, (1,), device=device).float() / diffusion_model.timesteps
+            predicted_diffusion = diffusion_model(gt_image, degraded_image, t)
             predicted_unet = unet_model(degraded_image)
 
         for j in range(degraded_image.size(0)):
