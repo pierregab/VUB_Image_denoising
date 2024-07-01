@@ -69,7 +69,12 @@ def evaluate_model_and_plot(diffusion_model_path, unet_model_path, val_loader, d
         import bm3d  # Import bm3d only if use_bm3d is True
 
     # Load the diffusion model
-    diffusion_model = torch.load(diffusion_model_path, map_location=device)
+    diffusion_model = DiffusionModel(UNet_S_Checkpointed())  # Ensure that DiffusionModel is correctly instantiated
+    diffusion_checkpoint = torch.load(diffusion_model_path, map_location=device)
+    if isinstance(diffusion_checkpoint, dict) and 'model_state_dict' in diffusion_checkpoint:
+        diffusion_model.load_state_dict(diffusion_checkpoint['model_state_dict'])
+    else:
+        diffusion_model = diffusion_checkpoint
     diffusion_model.to(device)
     diffusion_model.eval()
 
@@ -209,4 +214,4 @@ if __name__ == "__main__":
 
     train_loader, val_loader = load_data(image_folder, batch_size=1, num_workers=8, validation_split=0.5, augment=False, dataset_percentage=0.01, only_validation=False, include_noise_level=True, train_noise_levels=train_noise_levels, val_noise_levels=val_noise_levels)
 
-    evaluate_model_and_plot(diffusion_model_path="checkpoints/diffusion_model_checkpointed_full_epoch_1.pth", unet_model_path="checkpoints/unet_denoising.pth", val_loader=val_loader, device=device, include_noise_level=True, use_bm3d=False)
+    evaluate_model_and_plot(diffusion_model_path="checkpoints/diffusion_model_checkpointed_epoch_1.pth", unet_model_path="checkpoints/unet_denoising.pth", val_loader=val_loader, device=device, include_noise_level=True, use_bm3d=False)

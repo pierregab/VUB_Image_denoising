@@ -174,7 +174,7 @@ def train_model_checkpointed(model, train_loader, optimizer, writer, num_epochs=
     print(f"Model checkpoint saved at {checkpoint_path}")
 
     # Save the entire model
-    model_save_path = os.path.join("checkpoints", "imroved_diffusion_model_checkpointed_full.pth")
+    model_save_path = os.path.join("checkpoints", "improved_diffusion_model_checkpointed_full.pth")
     os.makedirs(os.path.dirname(model_save_path), exist_ok=True)
     torch.save(model, model_save_path)
     print(f"Entire model saved at {model_save_path}")
