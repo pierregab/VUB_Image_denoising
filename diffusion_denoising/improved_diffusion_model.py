@@ -17,7 +17,9 @@ sys.path.append(project_root)
 from dataset_creation.data_loader import load_data
 
 # Set device
-device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
+device = torch.device("mps" if torch.backends.mps.is_available() else "cuda" if torch.cuda.is_available() else "cpu")
+if device == "cpu":
+    print("WARNING: Using CPU. Consider using CUDA for faster training.")
 
 def print_memory_stats(prefix=""):
     memory_info = psutil.virtual_memory()
