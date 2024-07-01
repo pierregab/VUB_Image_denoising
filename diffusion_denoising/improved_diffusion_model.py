@@ -8,6 +8,7 @@ from torch.utils.tensorboard import SummaryWriter
 from torchvision.utils import make_grid
 import time
 import torch.utils.checkpoint as cp
+import subprocess
 
 # Assuming your script is in RCA_GAN and the project root is one level up
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
@@ -170,12 +171,20 @@ def train_model_checkpointed(model, train_loader, optimizer, writer, num_epochs=
     }, checkpoint_path)
     print(f"Model checkpoint saved at {checkpoint_path}")
 
+def start_tensorboard(log_dir):
+    try:
+        subprocess.Popen(['tensorboard', '--logdir', log_dir])
+        print(f"TensorBoard started at http://localhost:6006")
+    except Exception as e:
+        print(f"Failed to start TensorBoard: {e}")
+
 if __name__ == "__main__":
     if torch.backends.mps.is_available():
         torch.mps.empty_cache()
 
     log_dir = os.path.join("runs", "diffusion_checkpointed")
     writer = SummaryWriter(log_dir=log_dir)
+    start_tensorboard(log_dir)
     
     image_folder = 'DIV2K_train_HR.nosync'
     train_loader, val_loader = load_data(image_folder, batch_size=2, augment=False, dataset_percentage=0.01)
