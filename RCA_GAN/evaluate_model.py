@@ -14,6 +14,7 @@ sys.path.append(project_root)
 
 from dataset_creation.data_loader import load_data
 from UNet.UNet_model import UNet  # Assuming UNet is defined in this module
+from diffusion_denoising.diffusion_model import UNet_S_Checkpointed, DiffusionModel  # Assuming UNet_S_Checkpointed is defined in this module
 
 def denormalize(tensor, mean=0.5, std=0.5):
     return tensor * std + mean
