@@ -37,11 +37,14 @@ def compute_metrics(original, processed):
     return psnr_value, ssim_value
 
 def plot_example_images(example_images):
-    num_levels = len(example_images)
+    noise_levels_to_plot = [15, 30, 50]
+    filtered_images = {k: v for k, v in example_images.items() if k in noise_levels_to_plot}
+    
+    num_levels = len(filtered_images)
     fig, axs = plt.subplots(num_levels, 4, figsize=(20, 5 * num_levels))
     
-    for i, (sigma, images) in enumerate(example_images.items()):
-        gt_image, degraded_image, predicted_image, bm3d_image = images
+    for i, (sigma, images) in enumerate(filtered_images.items()):
+        gt_image, degraded_image, predicted_unet_image, predicted_diffusion_image = images
         
         axs[i, 0].imshow(gt_image, cmap='gray')
         axs[i, 0].set_title(f'Ground Truth (Sigma: {sigma})')
@@ -51,12 +54,12 @@ def plot_example_images(example_images):
         axs[i, 1].set_title('Noisy')
         axs[i, 1].axis('off')
         
-        axs[i, 2].imshow(predicted_image, cmap='gray')
-        axs[i, 2].set_title('Denoised (Model)')
+        axs[i, 2].imshow(predicted_unet_image, cmap='gray')
+        axs[i, 2].set_title('Denoised (UNet)')
         axs[i, 2].axis('off')
         
-        axs[i, 3].imshow(bm3d_image, cmap='gray')
-        axs[i, 3].set_title('Denoised (BM3D)')
+        axs[i, 3].imshow(predicted_diffusion_image, cmap='gray')
+        axs[i, 3].set_title('Denoised (Diffusion)')
         axs[i, 3].axis('off')
     
     plt.show()
@@ -103,6 +106,10 @@ def evaluate_model_and_plot(diffusion_model_path, unet_model_path, val_loader, d
             psnr_unet, ssim_unet = compute_metrics(gt_image[j], predicted_unet[j])
 
             degraded_np = denormalize(degraded_image[j].cpu().numpy().squeeze())
+            gt_image_np = denormalize(gt_image[j].cpu().numpy().squeeze())
+            predicted_diffusion_np = denormalize(predicted_diffusion[j].cpu().numpy().squeeze())
+            predicted_unet_np = denormalize(predicted_unet[j].cpu().numpy().squeeze())
+            
             if use_bm3d:
                 bm3d_denoised = bm3d.bm3d(degraded_np, sigma_psd=30/255, stage_arg=bm3d.BM3DStages.ALL_STAGES)
                 psnr_bm3d = calculate_psnr(denormalize(gt_image[j].cpu().numpy().squeeze()), bm3d_denoised, data_range=1.0)
@@ -122,8 +129,8 @@ def evaluate_model_and_plot(diffusion_model_path, unet_model_path, val_loader, d
             metrics['ssim_bm3d'].append(ssim_bm3d)
 
             sigma_level = int(noise_level[j].item()) if noise_level is not None else 0
-            if sigma_level not in example_images:
-                example_images[sigma_level] = (gt_image[j].cpu().numpy().squeeze(), degraded_np, denormalize(predicted_diffusion[j].cpu().numpy().squeeze()), bm3d_denoised if use_bm3d else None)
+            if sigma_level in [15, 30, 50] and sigma_level not in example_images:
+                example_images[sigma_level] = (gt_image_np, degraded_np, predicted_unet_np, predicted_diffusion_np)
 
     noise_levels = np.array(metrics['noise_level'])
     psnr_degraded = np.array(metrics['psnr_degraded'])
