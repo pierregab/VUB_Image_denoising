@@ -201,14 +201,14 @@ def train_model_checkpointed(model, train_loader, optimizer, writer, num_epochs=
         
         writer.flush()
 
-    # Save the model checkpoint
-    checkpoint_path = os.path.join("checkpoints", "diffusion_model_checkpointed.pth")
-    os.makedirs(os.path.dirname(checkpoint_path), exist_ok=True)
-    torch.save({
-        'model_state_dict': model.state_dict(),
-        'optimizer_state_dict': optimizer.state_dict()
-    }, checkpoint_path)
-    print(f"Model checkpoint saved at {checkpoint_path}")
+        # Save the model checkpoint after each epoch
+        checkpoint_path = os.path.join("checkpoints", f"diffusion_model_checkpointed_epoch_{epoch + 1}.pth")
+        os.makedirs(os.path.dirname(checkpoint_path), exist_ok=True)
+        torch.save({
+            'model_state_dict': model.state_dict(),
+            'optimizer_state_dict': optimizer.state_dict()
+        }, checkpoint_path)
+        print(f"Model checkpoint saved at {checkpoint_path}")
 
 
 def start_tensorboard(log_dir):
