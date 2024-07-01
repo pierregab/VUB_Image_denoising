@@ -159,7 +159,7 @@ def train_model_checkpointed(model, train_loader, optimizer, writer, num_epochs=
         
         writer.flush()
 
-    # Save the model checkpoint
+    # Save the model checkpoint (state_dict)
     checkpoint_path = os.path.join("checkpoints", "diffusion_model_checkpointed.pth")
     os.makedirs(os.path.dirname(checkpoint_path), exist_ok=True)
     torch.save({
@@ -167,6 +167,11 @@ def train_model_checkpointed(model, train_loader, optimizer, writer, num_epochs=
         'optimizer_state_dict': optimizer.state_dict()
     }, checkpoint_path)
     print(f"Model checkpoint saved at {checkpoint_path}")
+
+    # Save the entire model
+    full_model_path = os.path.join("checkpoints", "diffusion_model_checkpointed_full.pth")
+    torch.save(model, full_model_path)
+    print(f"Full model saved at {full_model_path}")
 
 def start_tensorboard(log_dir):
     try:
@@ -186,6 +191,6 @@ if __name__ == "__main__":
     start_tensorboard(log_dir)
     
     image_folder = 'DIV2K_train_HR.nosync'
-    train_loader, val_loader = load_data(image_folder, batch_size=2, augment=False, dataset_percentage=0.001)
-    train_model_checkpointed(model_checkpointed, train_loader, optimizer, writer, num_epochs=10)
+    train_loader, val_loader = load_data(image_folder, batch_size=2, augment=False, dataset_percentage=0.1)
+    train_model_checkpointed(model_checkpointed, train_loader, optimizer, writer, num_epochs=30)
     writer.close()

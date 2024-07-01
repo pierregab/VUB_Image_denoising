@@ -165,13 +165,19 @@ def train_model_checkpointed(model, train_loader, optimizer, writer, num_epochs=
         writer.flush()
 
     # Save the model checkpoint
-    checkpoint_path = os.path.join("checkpoints", "diffusion_model_checkpointed.pth")
+    checkpoint_path = os.path.join("checkpoints", "improved_diffusion_model_checkpointed.pth")
     os.makedirs(os.path.dirname(checkpoint_path), exist_ok=True)
     torch.save({
         'model_state_dict': model.state_dict(),
         'optimizer_state_dict': optimizer.state_dict()
     }, checkpoint_path)
     print(f"Model checkpoint saved at {checkpoint_path}")
+
+    # Save the entire model
+    model_save_path = os.path.join("checkpoints", "imroved_diffusion_model_checkpointed_full.pth")
+    os.makedirs(os.path.dirname(model_save_path), exist_ok=True)
+    torch.save(model, model_save_path)
+    print(f"Entire model saved at {model_save_path}")
 
 def start_tensorboard(log_dir):
     try:
