@@ -159,19 +159,21 @@ def train_model_checkpointed(model, train_loader, optimizer, writer, num_epochs=
         
         writer.flush()
 
-    # Save the model checkpoint (state_dict)
-    checkpoint_path = os.path.join("checkpoints", "diffusion_model_checkpointed.pth")
-    os.makedirs(os.path.dirname(checkpoint_path), exist_ok=True)
-    torch.save({
-        'model_state_dict': model.state_dict(),
-        'optimizer_state_dict': optimizer.state_dict()
-    }, checkpoint_path)
-    print(f"Model checkpoint saved at {checkpoint_path}")
+        # Save the model checkpoint (state_dict) after each epoch
+        checkpoint_path = os.path.join("checkpoints", f"diffusion_model_checkpointed_epoch_{epoch + 1}.pth")
+        os.makedirs(os.path.dirname(checkpoint_path), exist_ok=True)
+        torch.save({
+            'epoch': epoch + 1,
+            'model_state_dict': model.state_dict(),
+            'optimizer_state_dict': optimizer.state_dict(),
+            'loss': loss,
+        }, checkpoint_path)
+        print(f"Model checkpoint saved at {checkpoint_path} after epoch {epoch + 1}")
 
-    # Save the entire model
-    full_model_path = os.path.join("checkpoints", "diffusion_model_checkpointed_full.pth")
-    torch.save(model, full_model_path)
-    print(f"Full model saved at {full_model_path}")
+        # Save the entire model after each epoch
+        full_model_path = os.path.join("checkpoints", f"diffusion_model_checkpointed_full_epoch_{epoch + 1}.pth")
+        torch.save(model, full_model_path)
+        print(f"Full model saved at {full_model_path} after epoch {epoch + 1}")
 
 def start_tensorboard(log_dir):
     try:
