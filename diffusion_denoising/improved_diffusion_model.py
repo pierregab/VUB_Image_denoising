@@ -121,7 +121,6 @@ def train_step_checkpointed(model, clean_images, noisy_images, optimizer):
     timesteps = model.timesteps
     clean_images, noisy_images = clean_images.to(device), noisy_images.to(device)
     
-    # Convert timesteps to a tensor
     timesteps_tensor = torch.tensor([timesteps], device=device)
     
     denoised_images = model(clean_images, noisy_images, timesteps_tensor)

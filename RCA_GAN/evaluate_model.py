@@ -101,7 +101,7 @@ def evaluate_model_and_plot(model, val_loader, device, model_path="best_denoisin
             if use_bm3d:
                 bm3d_denoised = bm3d.bm3d(degraded_np, sigma_psd=30/255, stage_arg=bm3d.BM3DStages.ALL_STAGES)
                 psnr_bm3d = calculate_psnr(denormalize(gt_image[j].cpu().numpy().squeeze()), bm3d_denoised, data_range=1.0)
-                ssim_bm3d = calculate_ssim(denormalize(gt_image[j].cpu().numpy().squeeze()), bm3d_denoised, L=1)
+                ssim_bm3d = calculate_ssim(denormalize(gt_image[j].cpu().numpy().squeeze()), bm3d_denoised)
             else:
                 psnr_bm3d = 0
                 ssim_bm3d = 0
