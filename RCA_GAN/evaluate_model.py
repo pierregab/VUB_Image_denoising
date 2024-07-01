@@ -153,7 +153,7 @@ def evaluate_model_and_plot(diffusion_model_path, unet_model_path, val_loader, d
     avg_ssim_unet = [np.mean(ssim_unet[noise_levels == nl]) for nl in unique_noise_levels]
     avg_ssim_bm3d = [np.mean(ssim_bm3d[noise_levels == nl]) for nl in unique_noise_levels] if use_bm3d else []
 
-    fig, axs = plt.subplots(2, 3, figsize=(20, 12))
+    fig, axs = plt.subplots(2, 2, figsize=(20, 12))
 
     axs[0, 0].plot(unique_noise_levels, avg_psnr_degraded, 'o-', label='Degraded', color='red')
     axs[0, 0].plot(unique_noise_levels, avg_psnr_diffusion, 'o-', label='Diffusion Model', color='green')
