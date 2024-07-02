@@ -182,9 +182,9 @@ def train_model_checkpointed(model, train_loader, optimizer, writer, num_epochs=
                 denoised_images = denormalize(denoised_images.cpu())
                 
                 # Create image grids
-                grid_clean = make_grid(clean_images, nrow=4, normalize=True)
-                grid_noisy = make_grid(noisy_images, nrow=4, normalize=True)
-                grid_denoised = make_grid(denoised_images, nrow=4, normalize=True)
+                grid_clean = make_grid(clean_images[:10], nrow=4, normalize=True)  # Only show 10 images
+                grid_noisy = make_grid(noisy_images[:10], nrow=4, normalize=True)
+                grid_denoised = make_grid(denoised_images[:10], nrow=4, normalize=True)
                 
                 # Add images to TensorBoard
                 writer.add_image(f'Epoch_{epoch + 1}/Clean Images', grid_clean, epoch + 1)
@@ -229,6 +229,6 @@ if __name__ == "__main__":
     start_tensorboard(log_dir)
     
     image_folder = 'DIV2K_train_HR.nosync'
-    train_loader, val_loader = load_data(image_folder, batch_size=32, augment=False, dataset_percentage=0.01)
-    train_model_checkpointed(model_checkpointed, train_loader, optimizer, writer, num_epochs=50)
+    train_loader, val_loader = load_data(image_folder, batch_size=64, augment=False, dataset_percentage=0.1, validation_split=0.1)
+    train_model_checkpointed(model_checkpointed, train_loader, optimizer, writer, num_epochs=40)
     writer.close()

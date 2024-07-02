@@ -64,21 +64,14 @@ def plot_example_images(example_images):
     
     plt.show()
 
-def evaluate_model_and_plot(diffusion_model_path, unet_model_path, val_loader, device, include_noise_level=False, use_bm3d=False):
+def evaluate_model_and_plot(epochs, diffusion_model_paths, unet_model_path, val_loader, device, include_noise_level=False, use_bm3d=False):
     if use_bm3d:
         import bm3d  # Import bm3d only if use_bm3d is True
 
-    # Load the diffusion model
-    diffusion_model = DiffusionModel(UNet_S_Checkpointed())  # Ensure that DiffusionModel is correctly instantiated
-    diffusion_checkpoint = torch.load(diffusion_model_path, map_location=device)
-    if isinstance(diffusion_checkpoint, dict) and 'model_state_dict' in diffusion_checkpoint:
-        diffusion_model.load_state_dict(diffusion_checkpoint['model_state_dict'])
-    else:
-        diffusion_model = diffusion_checkpoint
-    diffusion_model.to(device)
-    diffusion_model.eval()
+    metrics = {'epoch': [], 'noise_level': [], 'psnr_degraded': [], 'psnr_diffusion': [], 'psnr_unet': [], 'psnr_bm3d': [], 'ssim_degraded': [], 'ssim_diffusion': [], 'ssim_unet': [], 'ssim_bm3d': []}
+    example_images = {}
 
-    # Load the UNet model
+    # Load the fixed UNet model
     unet_model = UNet().to(device)
     unet_checkpoint = torch.load(unet_model_path, map_location=device)
     if 'model_state_dict' in unet_checkpoint:
@@ -87,56 +80,71 @@ def evaluate_model_and_plot(diffusion_model_path, unet_model_path, val_loader, d
         unet_model.load_state_dict(unet_checkpoint)
     unet_model.eval()
 
-    metrics = {'noise_level': [], 'psnr_degraded': [], 'psnr_diffusion': [], 'psnr_unet': [], 'psnr_bm3d': [], 'ssim_degraded': [], 'ssim_diffusion': [], 'ssim_unet': [], 'ssim_bm3d': []}
-    example_images = {}
-
-    for i, data in enumerate(tqdm(val_loader, desc="Evaluating")):
-        if include_noise_level:
-            degraded_image, gt_image, noise_level = data
+    for epoch, diffusion_model_path in zip(epochs, diffusion_model_paths):
+        # Load the diffusion model checkpoint
+        diffusion_model = DiffusionModel(UNet_S_Checkpointed())  # Ensure that DiffusionModel is correctly instantiated
+        diffusion_checkpoint = torch.load(diffusion_model_path, map_location=device)
+        if isinstance(diffusion_checkpoint, dict) and 'model_state_dict' in diffusion_checkpoint:
+            diffusion_model.load_state_dict(diffusion_checkpoint['model_state_dict'])
         else:
-            degraded_image, gt_image = data
-            noise_level = None
+            diffusion_model = diffusion_checkpoint
+        diffusion_model.to(device)
+        diffusion_model.eval()
 
-        degraded_image = degraded_image.to(device)
-        gt_image = gt_image.to(device)
-
-        with torch.no_grad():
-            t = torch.randint(0, diffusion_model.timesteps, (1,), device=device).float() / diffusion_model.timesteps
-            predicted_diffusion = diffusion_model.improved_sampling(degraded_image)
-            predicted_unet = unet_model(degraded_image)
-
-        for j in range(degraded_image.size(0)):
-            psnr_degraded, ssim_degraded = compute_metrics(gt_image[j], degraded_image[j])
-            psnr_diffusion, ssim_diffusion = compute_metrics(gt_image[j], predicted_diffusion[j])
-            psnr_unet, ssim_unet = compute_metrics(gt_image[j], predicted_unet[j])
-
-            degraded_np = denormalize(degraded_image[j].cpu().numpy().squeeze())
-            gt_image_np = denormalize(gt_image[j].cpu().numpy().squeeze())
-            predicted_diffusion_np = denormalize(predicted_diffusion[j].cpu().numpy().squeeze())
-            predicted_unet_np = denormalize(predicted_unet[j].cpu().numpy().squeeze())
-            
-            if use_bm3d:
-                bm3d_denoised = bm3d.bm3d(degraded_np, sigma_psd=30/255, stage_arg=bm3d.BM3DStages.ALL_STAGES)
-                psnr_bm3d = calculate_psnr(denormalize(gt_image[j].cpu().numpy().squeeze()), bm3d_denoised, data_range=1.0)
-                ssim_bm3d = calculate_ssim(denormalize(gt_image[j].cpu().numpy().squeeze()), bm3d_denoised)
+        for i, data in enumerate(tqdm(val_loader, desc=f"Evaluating Epoch {epoch}")):
+            if include_noise_level:
+                degraded_image, gt_image, noise_level = data
             else:
-                psnr_bm3d = 0
-                ssim_bm3d = 0
+                degraded_image, gt_image = data
+                noise_level = None
 
-            metrics['noise_level'].append(noise_level[j].item() if noise_level is not None else 0)
-            metrics['psnr_degraded'].append(psnr_degraded)
-            metrics['psnr_diffusion'].append(psnr_diffusion)
-            metrics['psnr_unet'].append(psnr_unet)
-            metrics['psnr_bm3d'].append(psnr_bm3d)
-            metrics['ssim_degraded'].append(ssim_degraded)
-            metrics['ssim_diffusion'].append(ssim_diffusion)
-            metrics['ssim_unet'].append(ssim_unet)
-            metrics['ssim_bm3d'].append(ssim_bm3d)
+            degraded_image = degraded_image.to(device)
+            gt_image = gt_image.to(device)
 
-            sigma_level = int(noise_level[j].item()) if noise_level is not None else 0
-            if sigma_level in [15, 30, 50] and sigma_level not in example_images:
-                example_images[sigma_level] = (gt_image_np, degraded_np, predicted_unet_np, predicted_diffusion_np)
+            with torch.no_grad():
+                t = torch.randint(0, diffusion_model.timesteps, (1,), device=device).float() / diffusion_model.timesteps
+                predicted_diffusion = diffusion_model.improved_sampling(degraded_image)
+                predicted_unet = unet_model(degraded_image)
 
+            for j in range(degraded_image.size(0)):
+                psnr_degraded, ssim_degraded = compute_metrics(gt_image[j], degraded_image[j])
+                psnr_diffusion, ssim_diffusion = compute_metrics(gt_image[j], predicted_diffusion[j])
+                psnr_unet, ssim_unet = compute_metrics(gt_image[j], predicted_unet[j])
+
+                degraded_np = denormalize(degraded_image[j].cpu().numpy().squeeze())
+                gt_image_np = denormalize(gt_image[j].cpu().numpy().squeeze())
+                predicted_diffusion_np = denormalize(predicted_diffusion[j].cpu().numpy().squeeze())
+                predicted_unet_np = denormalize(predicted_unet[j].cpu().numpy().squeeze())
+                
+                if use_bm3d:
+                    bm3d_denoised = bm3d.bm3d(degraded_np, sigma_psd=30/255, stage_arg=bm3d.BM3DStages.ALL_STAGES)
+                    psnr_bm3d = calculate_psnr(denormalize(gt_image[j].cpu().numpy().squeeze()), bm3d_denoised, data_range=1.0)
+                    ssim_bm3d = calculate_ssim(denormalize(gt_image[j].cpu().numpy().squeeze()), bm3d_denoised)
+                else:
+                    psnr_bm3d = 0
+                    ssim_bm3d = 0
+
+                metrics['epoch'].append(epoch)
+                metrics['noise_level'].append(noise_level[j].item() if noise_level is not None else 0)
+                metrics['psnr_degraded'].append(psnr_degraded)
+                metrics['psnr_diffusion'].append(psnr_diffusion)
+                metrics['psnr_unet'].append(psnr_unet)
+                metrics['psnr_bm3d'].append(psnr_bm3d)
+                metrics['ssim_degraded'].append(ssim_degraded)
+                metrics['ssim_diffusion'].append(ssim_diffusion)
+                metrics['ssim_unet'].append(ssim_unet)
+                metrics['ssim_bm3d'].append(ssim_bm3d)
+
+                sigma_level = int(noise_level[j].item()) if noise_level is not None else 0
+                if sigma_level in [15, 30, 50] and (epoch, sigma_level) not in example_images:
+                    example_images[(epoch, sigma_level)] = (gt_image_np, degraded_np, predicted_unet_np, predicted_diffusion_np)
+
+    plot_metrics(metrics, epochs[-1], use_bm3d)
+    if example_images:
+        plot_example_images(example_images)
+
+def plot_metrics(metrics, last_epoch, use_bm3d):
+    epochs = sorted(set(metrics['epoch']))
     noise_levels = np.array(metrics['noise_level'])
     psnr_degraded = np.array(metrics['psnr_degraded'])
     psnr_diffusion = np.array(metrics['psnr_diffusion'])
@@ -150,19 +158,19 @@ def evaluate_model_and_plot(diffusion_model_path, unet_model_path, val_loader, d
     unique_noise_levels = sorted(np.unique(noise_levels))
 
     avg_psnr_degraded = [np.mean(psnr_degraded[noise_levels == nl]) for nl in unique_noise_levels]
-    avg_psnr_diffusion = [np.mean(psnr_diffusion[noise_levels == nl]) for nl in unique_noise_levels]
+    avg_psnr_diffusion_last = [np.mean(psnr_diffusion[(noise_levels == nl) & (np.array(metrics['epoch']) == last_epoch)]) for nl in unique_noise_levels]
     avg_psnr_unet = [np.mean(psnr_unet[noise_levels == nl]) for nl in unique_noise_levels]
     avg_psnr_bm3d = [np.mean(psnr_bm3d[noise_levels == nl]) for nl in unique_noise_levels] if use_bm3d else []
     avg_ssim_degraded = [np.mean(ssim_degraded[noise_levels == nl]) for nl in unique_noise_levels]
-    avg_ssim_diffusion = [np.mean(ssim_diffusion[noise_levels == nl]) for nl in unique_noise_levels]
+    avg_ssim_diffusion_last = [np.mean(ssim_diffusion[(noise_levels == nl) & (np.array(metrics['epoch']) == last_epoch)]) for nl in unique_noise_levels]
     avg_ssim_unet = [np.mean(ssim_unet[noise_levels == nl]) for nl in unique_noise_levels]
     avg_ssim_bm3d = [np.mean(ssim_bm3d[noise_levels == nl]) for nl in unique_noise_levels] if use_bm3d else []
 
     fig, axs = plt.subplots(2, 2, figsize=(20, 12))
 
     axs[0, 0].plot(unique_noise_levels, avg_psnr_degraded, 'o-', label='Degraded', color='red')
-    axs[0, 0].plot(unique_noise_levels, avg_psnr_diffusion, 'o-', label='Diffusion Model', color='green')
     axs[0, 0].plot(unique_noise_levels, avg_psnr_unet, 'o-', label='UNet Model', color='purple')
+    axs[0, 0].plot(unique_noise_levels, avg_psnr_diffusion_last, 'o-', label=f'Diffusion Model (Epoch {last_epoch})', color='green')
     if use_bm3d:
         axs[0, 0].plot(unique_noise_levels, avg_psnr_bm3d, 'o-', label='BM3D', color='blue')
     axs[0, 0].set_xlabel('Noise Standard Deviation')
@@ -172,8 +180,8 @@ def evaluate_model_and_plot(diffusion_model_path, unet_model_path, val_loader, d
     axs[0, 0].grid()
 
     axs[1, 0].plot(unique_noise_levels, avg_ssim_degraded, 'o-', label='Degraded', color='red')
-    axs[1, 0].plot(unique_noise_levels, avg_ssim_diffusion, 'o-', label='Diffusion Model', color='green')
     axs[1, 0].plot(unique_noise_levels, avg_ssim_unet, 'o-', label='UNet Model', color='purple')
+    axs[1, 0].plot(unique_noise_levels, avg_ssim_diffusion_last, 'o-', label=f'Diffusion Model (Epoch {last_epoch})', color='green')
     if use_bm3d:
         axs[1, 0].plot(unique_noise_levels, avg_ssim_bm3d, 'o-', label='BM3D', color='blue')
     axs[1, 0].set_xlabel('Noise Standard Deviation')
@@ -182,28 +190,32 @@ def evaluate_model_and_plot(diffusion_model_path, unet_model_path, val_loader, d
     axs[1, 0].legend()
     axs[1, 0].grid()
 
-    # Additional plots without Degraded and BM3D
-    axs[0, 1].plot(unique_noise_levels, avg_psnr_diffusion, 'o-', label='Diffusion Model', color='green')
-    axs[0, 1].plot(unique_noise_levels, avg_psnr_unet, 'o-', label='UNet Model', color='purple')
+    # Additional plots for different epochs of the diffusion model
+    colors = ['blue', 'orange', 'cyan', 'magenta']
+    for idx, epoch in enumerate(epochs):
+        epoch_indices = [i for i, e in enumerate(metrics['epoch']) if e == epoch]
+        unique_noise_levels = sorted(np.unique(noise_levels[epoch_indices]))
+
+        avg_psnr_diffusion = [np.mean(psnr_diffusion[epoch_indices][noise_levels[epoch_indices] == nl]) for nl in unique_noise_levels]
+        avg_ssim_diffusion = [np.mean(ssim_diffusion[epoch_indices][noise_levels[epoch_indices] == nl]) for nl in unique_noise_levels]
+
+        axs[0, 1].plot(unique_noise_levels, avg_psnr_diffusion, 'o-', label=f'Diffusion Model (Epoch {epoch})', color=colors[idx % len(colors)])
+        axs[1, 1].plot(unique_noise_levels, avg_ssim_diffusion, 'o-', label=f'Diffusion Model (Epoch {epoch})', color=colors[idx % len(colors)])
+
     axs[0, 1].set_xlabel('Noise Standard Deviation')
     axs[0, 1].set_ylabel('PSNR')
-    axs[0, 1].set_title('PSNR value variation curve (without Degraded)')
+    axs[0, 1].set_title('PSNR value variation curve (Diffusion Model)')
     axs[0, 1].legend()
     axs[0, 1].grid()
 
-    axs[1, 1].plot(unique_noise_levels, avg_ssim_diffusion, 'o-', label='Diffusion Model', color='green')
-    axs[1, 1].plot(unique_noise_levels, avg_ssim_unet, 'o-', label='UNet Model', color='purple')
     axs[1, 1].set_xlabel('Noise Standard Deviation')
     axs[1, 1].set_ylabel('SSIM')
-    axs[1, 1].set_title('SSIM value variation curve (without Degraded)')
+    axs[1, 1].set_title('SSIM value variation curve (Diffusion Model)')
     axs[1, 1].legend()
     axs[1, 1].grid()
 
     plt.tight_layout()
     plt.show()
-
-    if example_images:
-        plot_example_images(example_images)
 
 if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() else "mps")
@@ -212,6 +224,9 @@ if __name__ == "__main__":
     train_noise_levels = [10, 20, 30, 40, 50, 60, 70, 80]
     val_noise_levels = [10, 20, 30, 40, 50, 60, 70, 80]
 
-    train_loader, val_loader = load_data(image_folder, batch_size=1, num_workers=8, validation_split=0.5, augment=False, dataset_percentage=0.01, only_validation=False, include_noise_level=True, train_noise_levels=train_noise_levels, val_noise_levels=val_noise_levels)
+    train_loader, val_loader = load_data(image_folder, batch_size=1, num_workers=8, validation_split=0.2, augment=False, dataset_percentage=0.01, only_validation=False, include_noise_level=True, train_noise_levels=train_noise_levels, val_noise_levels=val_noise_levels)
 
-    evaluate_model_and_plot(diffusion_model_path="checkpoints/diffusion_model_checkpointed_epoch_1.pth", unet_model_path="checkpoints/unet_denoising.pth", val_loader=val_loader, device=device, include_noise_level=True, use_bm3d=False)
+    epochs_to_evaluate = [10, 20, 30, 40]
+    diffusion_model_paths = [f"checkpoints/diffusion_model_checkpointed_epoch_{epoch}.pth" for epoch in epochs_to_evaluate]
+    unet_model_path = "checkpoints/unet_denoising.pth"
+    evaluate_model_and_plot(epochs_to_evaluate, diffusion_model_paths, unet_model_path, val_loader=val_loader, device=device, include_noise_level=True, use_bm3d=False)
