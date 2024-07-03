@@ -97,12 +97,21 @@ def plot_frequency_domain(image, title):
     plt.colorbar()
     plt.show()
 
+def plot_heatmap(aggregated_diff_map, title):
+    plt.imshow(aggregated_diff_map, cmap='hot', interpolation='nearest')
+    plt.colorbar()
+    plt.title(title)
+    plt.show()
+
 def evaluate_model_and_plot(epochs, diffusion_model_paths, unet_model_path, val_loader, device, include_noise_level=False, use_bm3d=False):
     if use_bm3d:
         import bm3d  # Import bm3d only if use_bm3d is True
 
     metrics = {'epoch': [], 'noise_level': [], 'psnr_degraded': [], 'psnr_diffusion': [], 'psnr_unet': [], 'psnr_bm3d': [], 'ssim_degraded': [], 'ssim_diffusion': [], 'ssim_unet': [], 'ssim_bm3d': []}
     example_images = {}
+    aggregated_diff_map_unet = None
+    aggregated_diff_map_diffusion = None
+    count = 0
 
     # Load the fixed UNet model
     unet_model = UNet().to(device)
@@ -138,7 +147,7 @@ def evaluate_model_and_plot(epochs, diffusion_model_paths, unet_model_path, val_
                 t = torch.randint(0, diffusion_model.timesteps, (1,), device=device).float() / diffusion_model.timesteps
                 predicted_diffusion = diffusion_model.improved_sampling(degraded_image)
 
-                # create single chanel image to pass to unet
+                # create single channel image to pass to unet
                 degraded_image_1 = degraded_image.mean(dim=1, keepdim=True)
                 gt_image_1 = gt_image.mean(dim=1, keepdim=True)
 
@@ -173,9 +182,22 @@ def evaluate_model_and_plot(epochs, diffusion_model_paths, unet_model_path, val_
                 metrics['ssim_unet'].append(ssim_unet)
                 metrics['ssim_bm3d'].append(ssim_bm3d)
 
+                # Accumulate difference maps
+                if aggregated_diff_map_unet is None:
+                    aggregated_diff_map_unet = np.abs(gt_image_np - predicted_unet_np)
+                    aggregated_diff_map_diffusion = np.abs(gt_image_np - predicted_diffusion_np)
+                else:
+                    aggregated_diff_map_unet += np.abs(gt_image_np - predicted_unet_np)
+                    aggregated_diff_map_diffusion += np.abs(gt_image_np - predicted_diffusion_np)
+                count += 1
+
                 sigma_level = int(noise_level[j].item()) if noise_level is not None else 0
                 if sigma_level in [15, 30, 50] and (epoch, sigma_level) not in example_images:
                     example_images[(epoch, sigma_level)] = (gt_image_np, degraded_np, predicted_unet_np, predicted_diffusion_np)
+
+    # Average the accumulated difference maps
+    aggregated_diff_map_unet /= count
+    aggregated_diff_map_diffusion /= count
 
     plot_metrics(metrics, epochs[-1], use_bm3d)
     print("Example images keys:", example_images.keys())
@@ -197,6 +219,10 @@ def evaluate_model_and_plot(epochs, diffusion_model_paths, unet_model_path, val_
         plot_example_images({key[1]: value for key, value in example_images.items()})
     else:
         print("No example images to plot.")
+
+    # Plot heatmaps of aggregated difference maps
+    plot_heatmap(aggregated_diff_map_unet, 'Aggregated Difference Map (UNet)')
+    plot_heatmap(aggregated_diff_map_diffusion, 'Aggregated Difference Map (Diffusion)')
 
 def plot_metrics(metrics, last_epoch, use_bm3d):
     epochs = sorted(set(metrics['epoch']))
