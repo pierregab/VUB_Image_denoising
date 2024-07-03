@@ -179,10 +179,6 @@ def evaluate_model_and_plot(epochs, diffusion_model_paths, unet_model_path, val_
 
     plot_metrics(metrics, epochs[-1], use_bm3d)
     print("Example images keys:", example_images.keys())
-    if example_images:
-        plot_example_images({key[1]: value for key, value in example_images.items()})
-    else:
-        print("No example images to plot.")
 
     # Plot additional histograms and frequency domain analysis
     for (epoch, sigma), images in example_images.items():
@@ -196,6 +192,11 @@ def evaluate_model_and_plot(epochs, diffusion_model_paths, unet_model_path, val_
         plot_frequency_domain(gt_image, f'Ground Truth Frequency Domain (Epoch: {epoch}, Sigma: {sigma})')
         plot_frequency_domain(predicted_unet_image, f'UNet Frequency Domain (Epoch: {epoch}, Sigma: {sigma})')
         plot_frequency_domain(predicted_diffusion_image, f'Diffusion Frequency Domain (Epoch: {epoch}, Sigma: {sigma})')
+
+    if example_images:
+        plot_example_images({key[1]: value for key, value in example_images.items()})
+    else:
+        print("No example images to plot.")
 
 def plot_metrics(metrics, last_epoch, use_bm3d):
     epochs = sorted(set(metrics['epoch']))
@@ -245,7 +246,7 @@ def plot_metrics(metrics, last_epoch, use_bm3d):
     axs[1, 0].grid()
 
     # Additional plots for different epochs of the diffusion model
-    colors = ['blue', 'orange', 'cyan', 'magenta']
+    colors = ['blue', 'orange', 'cyan', 'magenta', 'black', 'yellow', 'green', 'red']
     for idx, epoch in enumerate(epochs):
         epoch_indices = [i for i, e in enumerate(metrics['epoch']) if e == epoch]
         unique_noise_levels = sorted(np.unique(noise_levels[epoch_indices]))
