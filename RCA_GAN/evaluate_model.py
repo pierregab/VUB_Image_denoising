@@ -20,7 +20,7 @@ def denormalize(tensor, mean=0.5, std=0.5):
 
 def calculate_ssim(X, Y, data_range=1.0, use_rgb = False):
     if use_rgb:
-        return ssim(X, Y, data_range=data_range, multichannel=True)
+        return ssim(X, Y, data_range=data_range, multichannel=True, channel_axis=0)
     else:
         return ssim(X, Y, data_range=data_range)
 
