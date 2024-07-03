@@ -7,7 +7,7 @@ import numpy as np
 import os
 import sys
 from tqdm import tqdm
-import lpips
+from torchmetrics.image.lpip import LearnedPerceptualImagePatchSimilarity
 
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 sys.path.append(project_root)
@@ -16,10 +16,12 @@ from dataset_creation.data_loader import load_data
 from UNet.UNet_model import UNet  # Assuming UNet is defined in this module
 from diffusion_denoising.diffusion_model import UNet_S_Checkpointed, DiffusionModel  # Assuming UNet_S_Checkpointed is defined in this module
 
+device = torch.device("cuda" if torch.cuda.is_available() else "mps")
+
 def denormalize(tensor, mean=0.5, std=0.5):
     return tensor * std + mean
 
-def calculate_ssim(X, Y, data_range=1.0, use_rgb = False):
+def calculate_ssim(X, Y, data_range=1.0, use_rgb=False):
     if use_rgb:
         return ssim(X, Y, data_range=data_range, multichannel=True, channel_axis=0)
     else:
@@ -35,6 +37,9 @@ def calculate_psnr(X, Y, data_range=1.0):
 def calculate_mae(X, Y):
     return np.mean(np.abs(X - Y))
 
+# Initialize the LPIPS metric
+lpips_metric = LearnedPerceptualImagePatchSimilarity(net_type='alex').to(device)
+
 def compute_metrics(original, processed, use_rgb=False):
     original_np = denormalize(original.cpu().numpy().squeeze())
     processed_np = denormalize(processed.cpu().numpy().squeeze())
@@ -43,10 +48,9 @@ def compute_metrics(original, processed, use_rgb=False):
     ssim_value = calculate_ssim(original_np, processed_np, data_range=1.0, use_rgb=use_rgb)
     
     # LPIPS calculation
-    lpips_loss = lpips.LPIPS(net='alex')
     original_tensor = original.unsqueeze(0).to(device)
     processed_tensor = processed.unsqueeze(0).to(device)
-    lpips_value = lpips_loss(original_tensor, processed_tensor).item()
+    lpips_value = lpips_metric(original_tensor, processed_tensor).item()
     
     return psnr_value, ssim_value, lpips_value
 
@@ -151,8 +155,6 @@ def evaluate_model_and_plot(epochs, diffusion_model_paths, unet_model_path, val_
     aggregated_diff_map_diffusion = None
     count = 0
 
-    lpips_loss = lpips.LPIPS(net='alex').to(device)
-
     # Load the fixed UNet model
     unet_model = UNet().to(device)
     unet_checkpoint = torch.load(unet_model_path, map_location=device)
@@ -208,7 +210,7 @@ def evaluate_model_and_plot(epochs, diffusion_model_paths, unet_model_path, val_
                     psnr_bm3d = calculate_psnr(denormalize(gt_image[j].cpu().numpy().squeeze()), bm3d_denoised, data_range=1.0)
                     ssim_bm3d = calculate_ssim(denormalize(gt_image[j].cpu().numpy().squeeze()), bm3d_denoised)
                     bm3d_tensor = torch.tensor(bm3d_denoised).unsqueeze(0).to(device)
-                    lpips_bm3d = lpips_loss(gt_image[j].unsqueeze(0), bm3d_tensor).item()
+                    lpips_bm3d = lpips_metric(gt_image[j].unsqueeze(0), bm3d_tensor).item()
                 else:
                     psnr_bm3d = 0
                     ssim_bm3d = 0
