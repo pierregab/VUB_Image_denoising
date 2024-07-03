@@ -19,7 +19,7 @@ def denormalize(tensor, mean=0.5, std=0.5):
     return tensor * std + mean
 
 def calculate_ssim(X, Y, data_range=1.0, multichannel=False):
-    return ssim(X, Y, data_range=data_range, multichannel=multichannel)
+    return ssim(X, Y, data_range=data_range, channel_axis=3 if multichannel else None)
 
 def calculate_psnr(X, Y, data_range=1.0):
     mse = np.mean((X - Y) ** 2)
