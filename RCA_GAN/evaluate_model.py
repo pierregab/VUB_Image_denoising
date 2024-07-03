@@ -392,7 +392,7 @@ if __name__ == "__main__":
 
     train_loader, val_loader = load_data(image_folder, batch_size=1, num_workers=8, validation_split=0.2, augment=False, dataset_percentage=0.01, only_validation=False, include_noise_level=True, train_noise_levels=train_noise_levels, val_noise_levels=val_noise_levels, use_rgb=True)
 
-    epochs_to_evaluate = [30, 40, 52]
+    epochs_to_evaluate = [40, 50, 62]
     diffusion_model_paths = [f"checkpoints/diffusion_model_checkpointed_epoch_{epoch}.pth" for epoch in epochs_to_evaluate]
     unet_model_path = "checkpoints/unet_denoising.pth"
     evaluate_model_and_plot(epochs_to_evaluate, diffusion_model_paths, unet_model_path, val_loader=val_loader, device=device, include_noise_level=True, use_bm3d=False)
