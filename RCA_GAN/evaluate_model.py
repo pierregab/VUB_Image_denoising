@@ -115,13 +115,14 @@ def evaluate_model_and_plot(epochs, diffusion_model_paths, unet_model_path, val_
 
                 # create single chanel image to pass to unet
                 degraded_image_1 = degraded_image.mean(dim=1, keepdim=True)
+                gt_image_1 = gt_image.mean(dim=1, keepdim=True)
 
                 predicted_unet = unet_model(degraded_image_1)
 
             for j in range(degraded_image.size(0)):
                 psnr_degraded, ssim_degraded = compute_metrics(gt_image[j], degraded_image[j], use_rgb=True)
                 psnr_diffusion, ssim_diffusion = compute_metrics(gt_image[j], predicted_diffusion[j], use_rgb=True)
-                psnr_unet, ssim_unet = compute_metrics(gt_image[j], predicted_unet[j])
+                psnr_unet, ssim_unet = compute_metrics(gt_image_1[j], predicted_unet[j])
 
                 degraded_np = denormalize(degraded_image[j].cpu().numpy().squeeze())
                 gt_image_np = denormalize(gt_image[j].cpu().numpy().squeeze())
