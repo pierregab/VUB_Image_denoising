@@ -41,6 +41,10 @@ def plot_example_images(example_images):
     filtered_images = {k: v for k, v in example_images.items() if k in noise_levels_to_plot}
     
     num_levels = len(filtered_images)
+    if num_levels == 0:
+        print("No example images to plot.")
+        return
+    
     fig, axs = plt.subplots(num_levels, 4, figsize=(20, 5 * num_levels))
     
     for i, (sigma, images) in enumerate(filtered_images.items()):
@@ -63,6 +67,7 @@ def plot_example_images(example_images):
         axs[i, 3].axis('off')
     
     plt.show()
+
 
 def evaluate_model_and_plot(epochs, diffusion_model_paths, unet_model_path, val_loader, device, include_noise_level=False, use_bm3d=False):
     if use_bm3d:
@@ -140,8 +145,11 @@ def evaluate_model_and_plot(epochs, diffusion_model_paths, unet_model_path, val_
                     example_images[(epoch, sigma_level)] = (gt_image_np, degraded_np, predicted_unet_np, predicted_diffusion_np)
 
     plot_metrics(metrics, epochs[-1], use_bm3d)
+    print("Example images keys:", example_images.keys())
     if example_images:
-        plot_example_images(example_images)
+        plot_example_images({key[1]: value for key, value in example_images.items()})
+    else:
+        print("No example images to plot.")
 
 def plot_metrics(metrics, last_epoch, use_bm3d):
     epochs = sorted(set(metrics['epoch']))

@@ -9,6 +9,8 @@ from torch.utils.tensorboard import SummaryWriter
 from torchvision.utils import make_grid
 import time
 import torch.utils.checkpoint as cp
+from torch.optim.lr_scheduler import CosineAnnealingLR
+import pytorch_msssim
 
 # Assuming your script is in RCA_GAN and the project root is one level up
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
@@ -18,15 +20,6 @@ from dataset_creation.data_loader import load_data
 
 # Set device
 device = torch.device("cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu")
-
-def print_memory_stats(prefix=""):
-    if torch.cuda.is_available():
-        print(f"{prefix} CUDA Memory Allocated: {torch.cuda.memory_allocated() / 1024 ** 3:.2f} GB")
-        print(f"{prefix} CUDA Memory Reserved: {torch.cuda.memory_reserved() / 1024 ** 3:.2f} GB")
-    elif torch.backends.mps.is_available():
-        memory_info = psutil.virtual_memory()
-        print(f"{prefix} System Memory Used: {memory_info.used / 1024 ** 3:.2f} GB")
-        print(f"{prefix} System Memory Available: {memory_info.available / 1024 ** 3:.2f} GB")
 
 class UNet_S_Checkpointed(nn.Module):
     def __init__(self):
@@ -105,10 +98,18 @@ class DiffusionModel(nn.Module):
 def charbonnier_loss(pred, target, epsilon=1e-3):
     return torch.mean(torch.sqrt((pred - target) ** 2 + epsilon ** 2))
 
+def combined_loss(pred, target, mse_weight=0.5, charbonnier_weight=0.3, ssim_weight=0.2, epsilon=1e-3):
+    mse_loss = nn.MSELoss()(pred, target)
+    charbonnier = charbonnier_loss(pred, target, epsilon)
+    ssim_loss = 1 - pytorch_msssim.ssim(pred, target, data_range=1.0, size_average=True)
+
+    return mse_weight * mse_loss + charbonnier_weight * charbonnier + ssim_weight * ssim_loss
+
 # Define the checkpointed model and optimizer
 unet_checkpointed = UNet_S_Checkpointed().to(device)
 model_checkpointed = DiffusionModel(unet_checkpointed).to(device)
 optimizer = optim.Adam(model_checkpointed.parameters(), lr=2e-4, betas=(0.9, 0.999))
+scheduler = CosineAnnealingLR(optimizer, T_max=10)
 
 def denormalize(tensor):
     return tensor * 0.5 + 0.5
@@ -143,10 +144,11 @@ def train_step_checkpointed(model, clean_images, noisy_images, optimizer):
     # Denoise the interpolated image
     denoised_images = model.unet(interpolated_images, t_tensor)
     
-    # Calculate the loss
-    loss = charbonnier_loss(denoised_images, clean_images.to(device))
+    # Calculate the combined loss
+    loss = combined_loss(denoised_images, clean_images.to(device))
     loss.backward()
     optimizer.step()
+
     
     return loss.item()
 
@@ -173,7 +175,7 @@ def train_model_checkpointed(model, train_loader, optimizer, writer, num_epochs=
                 denoised_images = model.improved_sampling(noisy_images)
                 
                 # Calculate validation loss
-                loss = charbonnier_loss(denoised_images, clean_images)
+                loss = combined_loss(denoised_images, clean_images)
                 validation_loss += loss.item()
 
                 # Denormalize images for visualization
@@ -200,6 +202,8 @@ def train_model_checkpointed(model, train_loader, optimizer, writer, num_epochs=
         writer.add_scalar('Loss/validation', validation_loss, epoch + 1)
         
         writer.flush()
+
+        scheduler.step()
 
         # Save the model checkpoint after each epoch
         checkpoint_path = os.path.join("checkpoints", f"diffusion_model_checkpointed_epoch_{epoch + 1}.pth")
