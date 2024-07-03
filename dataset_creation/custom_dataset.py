@@ -12,19 +12,21 @@ class CustomDataset(Dataset):
     A custom dataset class for loading high-resolution images, extracting non-overlapping patches, and generating noisy versions.
     """
 
-    def __init__(self, image_folder, transform=None, include_noise_level=False, noise_levels=None):
+    def __init__(self, image_folder, transform=None, include_noise_level=False, noise_levels=None, use_rgb=False):
         """
         Args:
             image_folder (str): Directory with all the images.
             transform (callable, optional): Optional transform to be applied on a sample.
             include_noise_level (bool): Whether to include noise level in the returned samples.
             noise_levels (list): List of noise levels to be applied.
+            use_rgb (bool): Whether to use RGB images or grayscale.
         """
         self.image_paths = self._get_image_paths(image_folder)
         self.transform = transform
         self.noise_levels = noise_levels if noise_levels is not None else [15, 25, 50]  # Default noise levels
         self.patch_pairs = self._extract_patches()
         self.include_noise_level = include_noise_level
+        self.use_rgb = use_rgb  # New parameter for RGB images
 
         # Debug: Print initialized noise levels
         print("Initialized noise levels:", self.noise_levels)
@@ -67,7 +69,10 @@ class CustomDataset(Dataset):
         patch_idx = idx // len(self.noise_levels)
 
         image_path, top, left, patch_width, patch_height = self.patch_pairs[patch_idx]
-        image = Image.open(image_path).convert('L')  # Convert to grayscale
+        image = Image.open(image_path)
+        
+        if not self.use_rgb:
+            image = image.convert('L')  # Convert to grayscale if not using RGB
 
         gt_patch = transforms.functional.crop(image, top, left, patch_height, patch_width)
 

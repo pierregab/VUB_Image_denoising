@@ -24,7 +24,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "mps" if torch.ba
 class UNet_S_Checkpointed(nn.Module):
     def __init__(self):
         super(UNet_S_Checkpointed, self).__init__()
-        self.enc1 = self.conv_block(2, 32)  # Change input channels to 2 (image + time step)
+        self.enc1 = self.conv_block(4, 32)  # Change input channels to 4 (3 for RGB image + 1 for time step)
         self.enc2 = self.conv_block(32, 64)
         self.enc3 = self.conv_block(64, 128)
         self.pool = nn.MaxPool2d(2)
@@ -32,7 +32,7 @@ class UNet_S_Checkpointed(nn.Module):
         self.upconv2 = self.upconv(64, 32)
         self.dec3 = self.conv_block(128, 64)
         self.dec2 = self.conv_block(64, 32)
-        self.dec1 = self.conv_block(32, 1, final_layer=True)
+        self.dec1 = self.conv_block(32, 3, final_layer=True)  # Change output channels to 3 for RGB
 
     def conv_block(self, in_channels, out_channels, final_layer=False):
         if final_layer:
@@ -193,7 +193,7 @@ def train_model_checkpointed(model, train_loader, optimizer, writer, num_epochs=
                 writer.add_image(f'Epoch_{epoch + 1}/Noisy Images', grid_noisy, epoch + 1)
                 writer.add_image(f'Epoch_{epoch + 1}/Denoised Images', grid_denoised, epoch + 1)
              
-                if batch_idx >= 0:  # Change this if you want more batches
+                if batch_idx >= 0:
                     break
 
         # Log validation loss
@@ -233,6 +233,6 @@ if __name__ == "__main__":
     start_tensorboard(log_dir)
     
     image_folder = 'DIV2K_train_HR.nosync'
-    train_loader, val_loader = load_data(image_folder, batch_size=64, augment=False, dataset_percentage=0.1, validation_split=0.1)
+    train_loader, val_loader = load_data(image_folder, batch_size=64, augment=False, dataset_percentage=0.1, validation_split=0.1, use_rgb=True)
     train_model_checkpointed(model_checkpointed, train_loader, optimizer, writer, num_epochs=40)
     writer.close()
