@@ -51,13 +51,14 @@ def compute_metrics(original, processed, use_rgb=False):
     original_tensor = original.unsqueeze(0).to(device)
     processed_tensor = processed.unsqueeze(0).to(device)
 
-    # Normalize the input tensors to the range [-1, 1]
-    original_tensor = (original_tensor - 0.5) / 0.5
-    processed_tensor = (processed_tensor - 0.5) / 0.5
+    # Ensure the tensors are in the range [-1, 1] for LPIPS
+    original_tensor = (original_tensor - 0.5) * 2.0
+    processed_tensor = (processed_tensor - 0.5) * 2.0
 
     lpips_value = lpips_metric(original_tensor, processed_tensor).item()
     
     return psnr_value, ssim_value, lpips_value
+
 
 def plot_example_images(example_images):
     noise_levels_to_plot = [15, 30, 50]
@@ -379,7 +380,7 @@ if __name__ == "__main__":
 
     train_loader, val_loader = load_data(image_folder, batch_size=1, num_workers=8, validation_split=0.2, augment=False, dataset_percentage=0.01, only_validation=False, include_noise_level=True, train_noise_levels=train_noise_levels, val_noise_levels=val_noise_levels, use_rgb=True)
 
-    epochs_to_evaluate = [10, 20, 30, 40]
+    epochs_to_evaluate = [20, 30, 40, 50]
     diffusion_model_paths = [f"checkpoints/diffusion_model_checkpointed_epoch_{epoch}.pth" for epoch in epochs_to_evaluate]
     unet_model_path = "checkpoints/unet_denoising.pth"
     evaluate_model_and_plot(epochs_to_evaluate, diffusion_model_paths, unet_model_path, val_loader=val_loader, device=device, include_noise_level=True, use_bm3d=False)
