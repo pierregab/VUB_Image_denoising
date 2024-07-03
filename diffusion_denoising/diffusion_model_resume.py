@@ -211,19 +211,16 @@ def train_model_checkpointed(model, train_loader, optimizer, writer, scheduler, 
             'epoch': epoch,
             'model_state_dict': model.state_dict(),
             'optimizer_state_dict': optimizer.state_dict(),
-            'scheduler_state_dict': scheduler.state_dict()
         }, checkpoint_path)
         print(f"Model checkpoint saved at {checkpoint_path}")
 
 
-def load_checkpoint(model, optimizer, scheduler, checkpoint_path):
+def load_checkpoint(model, optimizer, checkpoint_path):
     if os.path.isfile(checkpoint_path):
         checkpoint = torch.load(checkpoint_path)
         model.load_state_dict(checkpoint['model_state_dict'])
         optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-        scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
-        start_epoch = checkpoint['epoch'] + 1
-        print(f"Loaded checkpoint '{checkpoint_path}' (epoch {checkpoint['epoch']})")
+        start_epoch = 50 + 1
         return start_epoch
     else:
         print(f"No checkpoint found at '{checkpoint_path}'")
@@ -250,7 +247,7 @@ if __name__ == "__main__":
     train_loader, val_loader = load_data(image_folder, batch_size=64, augment=False, dataset_percentage=0.1, validation_split=0.1, use_rgb=True)
     
     checkpoint_path = "checkpoints/diffusion_model_checkpointed_epoch_50.pth"  # Adjust the path as needed
-    start_epoch = load_checkpoint(model_checkpointed, optimizer, scheduler, checkpoint_path)
+    start_epoch = load_checkpoint(model_checkpointed, optimizer, checkpoint_path)
     
     num_epochs = 50  # Total number of epochs you want to train for
     train_model_checkpointed(model_checkpointed, train_loader, optimizer, writer, scheduler, start_epoch, num_epochs)
