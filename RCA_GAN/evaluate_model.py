@@ -81,29 +81,55 @@ def plot_error_map(gt_image, predicted_image):
     plt.title('Error Map')
     plt.show()
 
-def plot_histogram_of_differences(gt_image, predicted_image):
-    differences = (gt_image - predicted_image).flatten()
-    plt.hist(differences, bins=50, color='blue', alpha=0.7)
-    plt.title('Histogram of Differences')
-    plt.xlabel('Difference')
-    plt.ylabel('Frequency')
+def plot_histograms_of_differences(example_images):
+    noise_levels_to_plot = [15, 30, 50]
+    filtered_images = {k: v for k, v in example_images.items() if k[1] in noise_levels_to_plot}
+    
+    num_levels = len(filtered_images)
+    if num_levels == 0:
+        print("No example images to plot.")
+        return
+    
+    fig, axs = plt.subplots(num_levels, 2, figsize=(20, 5 * num_levels))
+
+    for i, ((epoch, sigma), images) in enumerate(filtered_images.items()):
+        gt_image, degraded_image, predicted_unet_image, predicted_diffusion_image = images
+
+        differences_unet = (gt_image - predicted_unet_image).flatten()
+        differences_diffusion = (gt_image - predicted_diffusion_image).flatten()
+
+        axs[i, 0].hist(differences_unet, bins=50, color='blue', alpha=0.7)
+        axs[i, 0].set_title(f'Histogram of Differences (UNet) - Epoch: {epoch}, Sigma: {sigma}')
+        axs[i, 0].set_xlabel('Difference')
+        axs[i, 0].set_ylabel('Frequency')
+
+        axs[i, 1].hist(differences_diffusion, bins=50, color='green', alpha=0.7)
+        axs[i, 1].set_title(f'Histogram of Differences (Diffusion) - Epoch: {epoch}, Sigma: {sigma}')
+        axs[i, 1].set_xlabel('Difference')
+        axs[i, 1].set_ylabel('Frequency')
+
+    plt.tight_layout()
     plt.show()
 
-def plot_frequency_domain(image, title):
-    f_transform = np.fft.fftshift(np.fft.fft2(image))
-    magnitude_spectrum = np.log(np.abs(f_transform) + 1)
-    plt.imshow(magnitude_spectrum, cmap='gray')
-    plt.title(title)
-    plt.colorbar()
+def plot_heatmaps(aggregated_diff_map_unet, aggregated_diff_map_diffusion):
+    fig, axs = plt.subplots(1, 2, figsize=(20, 10))
+    
+    if aggregated_diff_map_unet.ndim == 3:
+        aggregated_diff_map_unet = np.mean(aggregated_diff_map_unet, axis=0)
+    if aggregated_diff_map_diffusion.ndim == 3:
+        aggregated_diff_map_diffusion = np.mean(aggregated_diff_map_diffusion, axis=0)
+
+    im_unet = axs[0].imshow(aggregated_diff_map_unet, cmap='hot', interpolation='nearest')
+    axs[0].set_title('Aggregated Difference Map (UNet)')
+    fig.colorbar(im_unet, ax=axs[0], orientation='vertical')
+    
+    im_diffusion = axs[1].imshow(aggregated_diff_map_diffusion, cmap='hot', interpolation='nearest')
+    axs[1].set_title('Aggregated Difference Map (Diffusion)')
+    fig.colorbar(im_diffusion, ax=axs[1], orientation='vertical')
+    
+    plt.tight_layout()
     plt.show()
 
-def plot_heatmap(aggregated_diff_map, title):
-    if aggregated_diff_map.ndim == 3:
-        aggregated_diff_map = np.mean(aggregated_diff_map, axis=0)
-    plt.imshow(aggregated_diff_map, cmap='hot', interpolation='nearest')
-    plt.colorbar()
-    plt.title(title)
-    plt.show()
 
 def evaluate_model_and_plot(epochs, diffusion_model_paths, unet_model_path, val_loader, device, include_noise_level=False, use_bm3d=False):
     if use_bm3d:
@@ -205,26 +231,16 @@ def evaluate_model_and_plot(epochs, diffusion_model_paths, unet_model_path, val_
     print("Example images keys:", example_images.keys())
 
     # Plot additional histograms and frequency domain analysis
-    for (epoch, sigma), images in example_images.items():
-        gt_image, degraded_image, predicted_unet_image, predicted_diffusion_image = images
-
-        print(f'Plotting additional analyses for Epoch: {epoch}, Sigma: {sigma}')
-        
-        plot_histogram_of_differences(gt_image, predicted_unet_image)
-        plot_histogram_of_differences(gt_image, predicted_diffusion_image)
-
-        #plot_frequency_domain(gt_image, f'Ground Truth Frequency Domain (Epoch: {epoch}, Sigma: {sigma})')
-        #plot_frequency_domain(predicted_unet_image, f'UNet Frequency Domain (Epoch: {epoch}, Sigma: {sigma})')
-        #plot_frequency_domain(predicted_diffusion_image, f'Diffusion Frequency Domain (Epoch: {epoch}, Sigma: {sigma})')
+    plot_histograms_of_differences(example_images)
 
     # Plot heatmaps of aggregated difference maps
-    plot_heatmap(aggregated_diff_map_unet, 'Aggregated Difference Map (UNet)')
-    plot_heatmap(aggregated_diff_map_diffusion, 'Aggregated Difference Map (Diffusion)')
+    plot_heatmaps(aggregated_diff_map_unet, aggregated_diff_map_diffusion)
 
     if example_images:
         plot_example_images({key[1]: value for key, value in example_images.items()})
     else:
         print("No example images to plot.")
+
 
 
 def plot_metrics(metrics, last_epoch, use_bm3d):
