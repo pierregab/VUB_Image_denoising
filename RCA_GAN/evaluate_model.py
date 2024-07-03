@@ -18,8 +18,8 @@ from diffusion_denoising.diffusion_model import UNet_S_Checkpointed, DiffusionMo
 def denormalize(tensor, mean=0.5, std=0.5):
     return tensor * std + mean
 
-def calculate_ssim(X, Y, data_range=1.0):
-    return ssim(X, Y, data_range=data_range, multichannel=True if X.shape[-1] == 3 else False)
+def calculate_ssim(X, Y, data_range=1.0, multichannel=False):
+    return ssim(X, Y, data_range=data_range, multichannel=multichannel)
 
 def calculate_psnr(X, Y, data_range=1.0):
     mse = np.mean((X - Y) ** 2)
@@ -28,12 +28,12 @@ def calculate_psnr(X, Y, data_range=1.0):
     psnr_value = 10 * np.log10((data_range ** 2) / mse)
     return psnr_value
 
-def compute_metrics(original, processed):
+def compute_metrics(original, processed, is_rgb):
     original_np = denormalize(original.cpu().numpy().transpose(1, 2, 0))
     processed_np = denormalize(processed.cpu().numpy().transpose(1, 2, 0))
     
     psnr_value = calculate_psnr(original_np, processed_np, data_range=1.0)
-    ssim_value = calculate_ssim(original_np, processed_np, data_range=1.0)
+    ssim_value = calculate_ssim(original_np, processed_np, data_range=1.0, multichannel=is_rgb)
     return psnr_value, ssim_value
 
 def plot_example_images(example_images):
@@ -67,7 +67,6 @@ def plot_example_images(example_images):
         axs[i, 3].axis('off')
     
     plt.show()
-
 
 def evaluate_model_and_plot(epochs, diffusion_model_paths, unet_model_path, val_loader, device, include_noise_level=False, use_bm3d=False):
     if use_bm3d:
@@ -114,9 +113,9 @@ def evaluate_model_and_plot(epochs, diffusion_model_paths, unet_model_path, val_
                 predicted_unet = unet_model(degraded_image_gray)
 
             for j in range(degraded_image.size(0)):
-                psnr_degraded, ssim_degraded = compute_metrics(gt_image[j], degraded_image[j])
-                psnr_diffusion, ssim_diffusion = compute_metrics(gt_image[j], predicted_diffusion[j])
-                psnr_unet, ssim_unet = compute_metrics(gt_image[j], predicted_unet[j])
+                psnr_degraded, ssim_degraded = compute_metrics(gt_image[j], degraded_image[j], is_rgb=True)
+                psnr_diffusion, ssim_diffusion = compute_metrics(gt_image[j], predicted_diffusion[j], is_rgb=True)
+                psnr_unet, ssim_unet = compute_metrics(gt_image[j], predicted_unet[j], is_rgb=False)
 
                 degraded_np = denormalize(degraded_image[j].cpu().numpy().transpose(1, 2, 0))
                 gt_image_np = denormalize(gt_image[j].cpu().numpy().transpose(1, 2, 0))
@@ -126,7 +125,7 @@ def evaluate_model_and_plot(epochs, diffusion_model_paths, unet_model_path, val_
                 if use_bm3d:
                     bm3d_denoised = bm3d.bm3d(degraded_np, sigma_psd=30/255, stage_arg=bm3d.BM3DStages.ALL_STAGES)
                     psnr_bm3d = calculate_psnr(denormalize(gt_image[j].cpu().numpy().transpose(1, 2, 0)), bm3d_denoised, data_range=1.0)
-                    ssim_bm3d = calculate_ssim(denormalize(gt_image[j].cpu().numpy().transpose(1, 2, 0)), bm3d_denoised)
+                    ssim_bm3d = calculate_ssim(denormalize(gt_image[j].cpu().numpy().transpose(1, 2, 0)), bm3d_denoised, multichannel=True)
                 else:
                     psnr_bm3d = 0
                     ssim_bm3d = 0
@@ -220,7 +219,7 @@ def plot_metrics(metrics, last_epoch, use_bm3d):
 
     axs[1, 1].set_xlabel('Noise Standard Deviation')
     axs[1, 1].set_ylabel('SSIM')
-    axs[1, 1].setTitle('SSIM value variation curve (Diffusion Model)')
+    axs[1, 1].set_title('SSIM value variation curve (Diffusion Model)')
     axs[1, 1].legend()
     axs[1, 1].grid()
 
