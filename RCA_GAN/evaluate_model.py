@@ -211,18 +211,19 @@ def evaluate_model_and_plot(epochs, diffusion_model_paths, unet_model_path, val_
         plot_histogram_of_differences(gt_image, predicted_unet_image)
         plot_histogram_of_differences(gt_image, predicted_diffusion_image)
 
-        plot_frequency_domain(gt_image, f'Ground Truth Frequency Domain (Epoch: {epoch}, Sigma: {sigma})')
-        plot_frequency_domain(predicted_unet_image, f'UNet Frequency Domain (Epoch: {epoch}, Sigma: {sigma})')
-        plot_frequency_domain(predicted_diffusion_image, f'Diffusion Frequency Domain (Epoch: {epoch}, Sigma: {sigma})')
+        #plot_frequency_domain(gt_image, f'Ground Truth Frequency Domain (Epoch: {epoch}, Sigma: {sigma})')
+        #plot_frequency_domain(predicted_unet_image, f'UNet Frequency Domain (Epoch: {epoch}, Sigma: {sigma})')
+        #plot_frequency_domain(predicted_diffusion_image, f'Diffusion Frequency Domain (Epoch: {epoch}, Sigma: {sigma})')
+
+    # Plot heatmaps of aggregated difference maps
+    plot_heatmap(aggregated_diff_map_unet, 'Aggregated Difference Map (UNet)')
+    plot_heatmap(aggregated_diff_map_diffusion, 'Aggregated Difference Map (Diffusion)')
 
     if example_images:
         plot_example_images({key[1]: value for key, value in example_images.items()})
     else:
         print("No example images to plot.")
 
-    # Plot heatmaps of aggregated difference maps
-    plot_heatmap(aggregated_diff_map_unet, 'Aggregated Difference Map (UNet)')
-    plot_heatmap(aggregated_diff_map_diffusion, 'Aggregated Difference Map (Diffusion)')
 
 def plot_metrics(metrics, last_epoch, use_bm3d):
     epochs = sorted(set(metrics['epoch']))
