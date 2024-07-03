@@ -98,6 +98,8 @@ def plot_frequency_domain(image, title):
     plt.show()
 
 def plot_heatmap(aggregated_diff_map, title):
+    if aggregated_diff_map.ndim == 3:
+        aggregated_diff_map = np.mean(aggregated_diff_map, axis=0)
     plt.imshow(aggregated_diff_map, cmap='hot', interpolation='nearest')
     plt.colorbar()
     plt.title(title)
