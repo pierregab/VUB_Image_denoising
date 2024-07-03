@@ -51,13 +51,18 @@ def compute_metrics(original, processed, use_rgb=False):
     original_tensor = original.unsqueeze(0).to(device)
     processed_tensor = processed.unsqueeze(0).to(device)
 
-    # Ensure the tensors are in the range [-1, 1] for LPIPS
-    original_tensor = (original_tensor - 0.5) * 2.0
-    processed_tensor = (processed_tensor - 0.5) * 2.0
+    # Normalize the input tensors to the range [-1, 1]
+    original_tensor = (original_tensor - 0.5) / 0.5
+    processed_tensor = (processed_tensor - 0.5) / 0.5
+
+    # Ensure the tensors are correctly normalized to the range [-1, 1]
+    original_tensor = torch.clamp(original_tensor, -1, 1)
+    processed_tensor = torch.clamp(processed_tensor, -1, 1)
 
     lpips_value = lpips_metric(original_tensor, processed_tensor).item()
     
     return psnr_value, ssim_value, lpips_value
+
 
 
 def plot_example_images(example_images):
