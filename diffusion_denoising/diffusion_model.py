@@ -188,13 +188,12 @@ def train_model_checkpointed(model, train_loader, optimizer, writer, num_epochs=
                 grid_noisy = make_grid(noisy_images[:10], nrow=4, normalize=True)
                 grid_denoised = make_grid(denoised_images[:10], nrow=4, normalize=True)
                 
-                # Add images to TensorBoard
-                writer.add_image(f'Epoch_{epoch + 1}/Clean Images', grid_clean, epoch + 1)
-                writer.add_image(f'Epoch_{epoch + 1}/Noisy Images', grid_noisy, epoch + 1)
-                writer.add_image(f'Epoch_{epoch + 1}/Denoised Images', grid_denoised, epoch + 1)
+                # Add images to TensorBoard for the first batch
+                if batch_idx == 0:
+                    writer.add_image(f'Epoch_{epoch + 1}/Clean Images', grid_clean, epoch + 1)
+                    writer.add_image(f'Epoch_{epoch + 1}/Noisy Images', grid_noisy, epoch + 1)
+                    writer.add_image(f'Epoch_{epoch + 1}/Denoised Images', grid_denoised, epoch + 1)
              
-                if batch_idx >= 0:
-                    break
 
         # Log validation loss
         validation_loss /= len(val_loader)
