@@ -81,9 +81,9 @@ def plot_error_map(gt_image, predicted_image):
     plt.title('Error Map')
     plt.show()
 
-def plot_histograms_of_differences(example_images):
+def plot_histograms_of_differences(example_images, last_epoch):
     noise_levels_to_plot = [15, 30, 50]
-    filtered_images = {k: v for k, v in example_images.items() if k[1] in noise_levels_to_plot}
+    filtered_images = {k: v for k, v in example_images.items() if k[1] in noise_levels_to_plot and k[0] == last_epoch}
     
     num_levels = len(filtered_images)
     if num_levels == 0:
@@ -119,17 +119,19 @@ def plot_heatmaps(aggregated_diff_map_unet, aggregated_diff_map_diffusion):
     if aggregated_diff_map_diffusion.ndim == 3:
         aggregated_diff_map_diffusion = np.mean(aggregated_diff_map_diffusion, axis=0)
 
-    im_unet = axs[0].imshow(aggregated_diff_map_unet, cmap='hot', interpolation='nearest')
+    vmin = min(aggregated_diff_map_unet.min(), aggregated_diff_map_diffusion.min())
+    vmax = max(aggregated_diff_map_unet.max(), aggregated_diff_map_diffusion.max())
+
+    im_unet = axs[0].imshow(aggregated_diff_map_unet, cmap='hot', interpolation='nearest', vmin=vmin, vmax=vmax)
     axs[0].set_title('Aggregated Difference Map (UNet)')
     fig.colorbar(im_unet, ax=axs[0], orientation='vertical')
     
-    im_diffusion = axs[1].imshow(aggregated_diff_map_diffusion, cmap='hot', interpolation='nearest')
+    im_diffusion = axs[1].imshow(aggregated_diff_map_diffusion, cmap='hot', interpolation='nearest', vmin=vmin, vmax=vmax)
     axs[1].set_title('Aggregated Difference Map (Diffusion)')
     fig.colorbar(im_diffusion, ax=axs[1], orientation='vertical')
     
     plt.tight_layout()
     plt.show()
-
 
 def evaluate_model_and_plot(epochs, diffusion_model_paths, unet_model_path, val_loader, device, include_noise_level=False, use_bm3d=False):
     if use_bm3d:
@@ -231,7 +233,7 @@ def evaluate_model_and_plot(epochs, diffusion_model_paths, unet_model_path, val_
     print("Example images keys:", example_images.keys())
 
     # Plot additional histograms and frequency domain analysis
-    plot_histograms_of_differences(example_images)
+    plot_histograms_of_differences(example_images, epochs[-1])
 
     # Plot heatmaps of aggregated difference maps
     plot_heatmaps(aggregated_diff_map_unet, aggregated_diff_map_diffusion)
@@ -240,8 +242,6 @@ def evaluate_model_and_plot(epochs, diffusion_model_paths, unet_model_path, val_
         plot_example_images({key[1]: value for key, value in example_images.items()})
     else:
         print("No example images to plot.")
-
-
 
 def plot_metrics(metrics, last_epoch, use_bm3d):
     epochs = sorted(set(metrics['epoch']))
