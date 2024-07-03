@@ -209,7 +209,8 @@ def train_model_checkpointed(model, train_loader, optimizer, writer, num_epochs=
         os.makedirs(os.path.dirname(checkpoint_path), exist_ok=True)
         torch.save({
             'model_state_dict': model.state_dict(),
-            'optimizer_state_dict': optimizer.state_dict()
+            'optimizer_state_dict': optimizer.state_dict(),
+            'scheduler_state_dict': scheduler.state_dict()
         }, checkpoint_path)
         print(f"Model checkpoint saved at {checkpoint_path}")
 
