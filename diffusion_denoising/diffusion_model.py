@@ -152,9 +152,8 @@ def train_step_checkpointed(model, clean_images, noisy_images, optimizer):
     
     return loss.item()
 
-
-def train_model_checkpointed(model, train_loader, optimizer, writer, num_epochs=10):
-    for epoch in range(num_epochs):
+def train_model_checkpointed(model, train_loader, optimizer, scheduler, writer, num_epochs=10, start_epoch=0):
+    for epoch in range(start_epoch, num_epochs):
         # Training phase
         model.train()
         for batch_idx, (noisy_images, clean_images) in enumerate(train_loader):
@@ -208,11 +207,27 @@ def train_model_checkpointed(model, train_loader, optimizer, writer, num_epochs=
         checkpoint_path = os.path.join("checkpoints", f"diffusion_model_checkpointed_epoch_{epoch + 1}.pth")
         os.makedirs(os.path.dirname(checkpoint_path), exist_ok=True)
         torch.save({
+            'epoch': epoch + 1,
             'model_state_dict': model.state_dict(),
             'optimizer_state_dict': optimizer.state_dict(),
             'scheduler_state_dict': scheduler.state_dict()
         }, checkpoint_path)
         print(f"Model checkpoint saved at {checkpoint_path}")
+
+
+def load_checkpoint(model, optimizer, scheduler, checkpoint_path):
+    if os.path.isfile(checkpoint_path):
+        print(f"Loading checkpoint '{checkpoint_path}'")
+        checkpoint = torch.load(checkpoint_path)
+        model.load_state_dict(checkpoint['model_state_dict'])
+        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
+        start_epoch = checkpoint['epoch']
+        print(f"Loaded checkpoint '{checkpoint_path}' (epoch {start_epoch})")
+        return start_epoch
+    else:
+        print(f"No checkpoint found at '{checkpoint_path}'")
+        return 0
 
 
 def start_tensorboard(log_dir):
@@ -234,5 +249,10 @@ if __name__ == "__main__":
     
     image_folder = 'DIV2K_train_HR.nosync'
     train_loader, val_loader = load_data(image_folder, batch_size=64, augment=False, dataset_percentage=0.1, validation_split=0.1, use_rgb=True)
-    train_model_checkpointed(model_checkpointed, train_loader, optimizer, writer, num_epochs=40)
+    
+    # Load checkpoint if exists
+    checkpoint_path = os.path.join("checkpoints", "diffusion_model_checkpointed_last.pth")
+    start_epoch = load_checkpoint(model_checkpointed, optimizer, scheduler, checkpoint_path)
+    
+    train_model_checkpointed(model_checkpointed, train_loader, optimizer, scheduler, writer, num_epochs=200, start_epoch=start_epoch)
     writer.close()

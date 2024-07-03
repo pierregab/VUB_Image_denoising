@@ -220,7 +220,8 @@ def load_checkpoint(model, optimizer, checkpoint_path):
         checkpoint = torch.load(checkpoint_path)
         model.load_state_dict(checkpoint['model_state_dict'])
         optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-        start_epoch = 50 + 1
+        start_epoch = checkpoint.get('epoch', 0) + 1
+        print(f"Loaded checkpoint '{checkpoint_path}' (epoch {checkpoint.get('epoch', 0)})")
         return start_epoch
     else:
         print(f"No checkpoint found at '{checkpoint_path}'")
