@@ -41,7 +41,7 @@ def compute_metrics(original, processed, use_rgb=False):
 
 def plot_example_images(example_images):
     noise_levels_to_plot = [15, 30, 50]
-    filtered_images = {k: v for k, v in example_images.items() if k in noise_levels_to_plot}
+    filtered_images = {k: v for k, v in example_images.items() if k[1] in noise_levels_to_plot}
     
     num_levels = len(filtered_images)
     if num_levels == 0:
@@ -50,14 +50,14 @@ def plot_example_images(example_images):
     
     fig, axs = plt.subplots(num_levels, 4, figsize=(20, 5 * num_levels))
     
-    for i, (sigma, images) in enumerate(filtered_images.items()):
+    for i, ((epoch, sigma), images) in enumerate(filtered_images.items()):
         gt_image, degraded_image, predicted_unet_image, predicted_diffusion_image = images
         
-        axs[i, 0].imshow(gt_image, cmap='gray')
-        axs[i, 0].set_title(f'Ground Truth (Sigma: {sigma})')
+        axs[i, 0].imshow(np.transpose(gt_image, (1, 2, 0)))  # Assuming the image format is (C, H, W)
+        axs[i, 0].set_title(f'Ground Truth (Sigma: {sigma}, Epoch: {epoch})')
         axs[i, 0].axis('off')
         
-        axs[i, 1].imshow(degraded_image, cmap='gray')
+        axs[i, 1].imshow(np.transpose(degraded_image, (1, 2, 0)))  # Assuming the image format is (C, H, W)
         axs[i, 1].set_title('Noisy')
         axs[i, 1].axis('off')
         
@@ -65,7 +65,7 @@ def plot_example_images(example_images):
         axs[i, 2].set_title('Denoised (UNet)')
         axs[i, 2].axis('off')
         
-        axs[i, 3].imshow(predicted_diffusion_image, cmap='gray')
+        axs[i, 3].imshow(np.transpose(predicted_diffusion_image, (1, 2, 0)))  # Assuming the image format is (C, H, W)
         axs[i, 3].set_title('Denoised (Diffusion)')
         axs[i, 3].axis('off')
     
