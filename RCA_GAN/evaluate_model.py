@@ -31,6 +31,9 @@ def calculate_psnr(X, Y, data_range=1.0):
     psnr_value = 10 * np.log10((data_range ** 2) / mse)
     return psnr_value
 
+def calculate_mae(X, Y):
+    return np.mean(np.abs(X - Y))
+
 def compute_metrics(original, processed, use_rgb=False):
     original_np = denormalize(original.cpu().numpy().squeeze())
     processed_np = denormalize(processed.cpu().numpy().squeeze())
@@ -71,6 +74,28 @@ def plot_example_images(example_images):
     
     plt.show()
 
+def plot_error_map(gt_image, predicted_image):
+    error_map = np.abs(gt_image - predicted_image)
+    plt.imshow(error_map, cmap='hot', interpolation='nearest')
+    plt.colorbar()
+    plt.title('Error Map')
+    plt.show()
+
+def plot_histogram_of_differences(gt_image, predicted_image):
+    differences = (gt_image - predicted_image).flatten()
+    plt.hist(differences, bins=50, color='blue', alpha=0.7)
+    plt.title('Histogram of Differences')
+    plt.xlabel('Difference')
+    plt.ylabel('Frequency')
+    plt.show()
+
+def plot_frequency_domain(image, title):
+    f_transform = np.fft.fftshift(np.fft.fft2(image))
+    magnitude_spectrum = np.log(np.abs(f_transform) + 1)
+    plt.imshow(magnitude_spectrum, cmap='gray')
+    plt.title(title)
+    plt.colorbar()
+    plt.show()
 
 def evaluate_model_and_plot(epochs, diffusion_model_paths, unet_model_path, val_loader, device, include_noise_level=False, use_bm3d=False):
     if use_bm3d:
@@ -159,6 +184,19 @@ def evaluate_model_and_plot(epochs, diffusion_model_paths, unet_model_path, val_
     else:
         print("No example images to plot.")
 
+    # Plot additional histograms and frequency domain analysis
+    for (epoch, sigma), images in example_images.items():
+        gt_image, degraded_image, predicted_unet_image, predicted_diffusion_image = images
+
+        print(f'Plotting additional analyses for Epoch: {epoch}, Sigma: {sigma}')
+        
+        plot_histogram_of_differences(gt_image, predicted_unet_image)
+        plot_histogram_of_differences(gt_image, predicted_diffusion_image)
+
+        plot_frequency_domain(gt_image, f'Ground Truth Frequency Domain (Epoch: {epoch}, Sigma: {sigma})')
+        plot_frequency_domain(predicted_unet_image, f'UNet Frequency Domain (Epoch: {epoch}, Sigma: {sigma})')
+        plot_frequency_domain(predicted_diffusion_image, f'Diffusion Frequency Domain (Epoch: {epoch}, Sigma: {sigma})')
+
 def plot_metrics(metrics, last_epoch, use_bm3d):
     epochs = sorted(set(metrics['epoch']))
     noise_levels = np.array(metrics['noise_level'])
@@ -246,4 +284,3 @@ if __name__ == "__main__":
     diffusion_model_paths = [f"checkpoints/diffusion_model_checkpointed_epoch_{epoch}.pth" for epoch in epochs_to_evaluate]
     unet_model_path = "checkpoints/unet_denoising.pth"
     evaluate_model_and_plot(epochs_to_evaluate, diffusion_model_paths, unet_model_path, val_loader=val_loader, device=device, include_noise_level=True, use_bm3d=False)
- 
