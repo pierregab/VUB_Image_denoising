@@ -9,6 +9,8 @@ from torch.utils.tensorboard import SummaryWriter
 from torchvision.utils import make_grid
 import time
 import torch.utils.checkpoint as cp
+from torch.optim.lr_scheduler import CosineAnnealingLR
+import pytorch_msssim
 
 # Assuming your script is in RCA_GAN and the project root is one level up
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
@@ -19,48 +21,18 @@ from dataset_creation.data_loader import load_data
 # Set device
 device = torch.device("cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu")
 
-def print_memory_stats(prefix=""):
-    if torch.cuda.is_available():
-        print(f"{prefix} CUDA Memory Allocated: {torch.cuda.memory_allocated() / 1024 ** 3:.2f} GB")
-        print(f"{prefix} CUDA Memory Reserved: {torch.cuda.memory_reserved() / 1024 ** 3:.2f} GB")
-    elif torch.backends.mps.is_available():
-        memory_info = psutil.virtual_memory()
-        print(f"{prefix} System Memory Used: {memory_info.used / 1024 ** 3:.2f} GB")
-        print(f"{prefix} System Memory Available: {memory_info.available / 1024 ** 3:.2f} GB")
-
-class SelfAttention(nn.Module):
-    def __init__(self, in_channels):
-        super(SelfAttention, self).__init__()
-        self.query = nn.Conv2d(in_channels, in_channels // 8, kernel_size=1)
-        self.key = nn.Conv2d(in_channels, in_channels // 8, kernel_size=1)
-        self.value = nn.Conv2d(in_channels, in_channels, kernel_size=1)
-        self.gamma = nn.Parameter(torch.zeros(1))
-
-    def forward(self, x):
-        batch_size, C, width, height = x.size()
-        query = self.query(x).view(batch_size, -1, width * height).permute(0, 2, 1)
-        key = self.key(x).view(batch_size, -1, width * height)
-        attention = torch.bmm(query, key)
-        attention = torch.softmax(attention, dim=-1)
-        value = self.value(x).view(batch_size, -1, width * height)
-        out = torch.bmm(value, attention.permute(0, 2, 1))
-        out = out.view(batch_size, C, width, height)
-        out = self.gamma * out + x
-        return out
-
 class UNet_S_Checkpointed(nn.Module):
     def __init__(self):
         super(UNet_S_Checkpointed, self).__init__()
-        self.enc1 = self.conv_block(2, 32)  # Change input channels to 2 (image + time step)
+        self.enc1 = self.conv_block(4, 32)  # Change input channels to 4 (3 for RGB image + 1 for time step)
         self.enc2 = self.conv_block(32, 64)
         self.enc3 = self.conv_block(64, 128)
-        self.attn1 = SelfAttention(128)
         self.pool = nn.MaxPool2d(2)
         self.upconv3 = self.upconv(128, 64)
         self.upconv2 = self.upconv(64, 32)
         self.dec3 = self.conv_block(128, 64)
         self.dec2 = self.conv_block(64, 32)
-        self.dec1 = self.conv_block(32, 1, final_layer=True)
+        self.dec1 = self.conv_block(32, 3, final_layer=True)  # Change output channels to 3 for RGB
 
     def conv_block(self, in_channels, out_channels, final_layer=False):
         if final_layer:
@@ -73,8 +45,7 @@ class UNet_S_Checkpointed(nn.Module):
                 nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1),
                 nn.ReLU(inplace=True),
                 nn.Conv2d(out_channels, out_channels, kernel_size=3, padding=1),
-                nn.ReLU(inplace=True),
-                nn.GroupNorm(8, out_channels)
+                nn.ReLU(inplace=True)
             )
 
     def upconv(self, in_channels, out_channels):
@@ -88,7 +59,6 @@ class UNet_S_Checkpointed(nn.Module):
         enc1 = cp.checkpoint(self.enc1, x, use_reentrant=False)
         enc2 = cp.checkpoint(self.enc2, self.pool(enc1), use_reentrant=False)
         enc3 = cp.checkpoint(self.enc3, self.pool(enc2), use_reentrant=False)
-        enc3 = self.attn1(enc3)
         dec3 = cp.checkpoint(self.dec3, torch.cat((self.upconv3(enc3), enc2), dim=1), use_reentrant=False)
         dec2 = cp.checkpoint(self.dec2, torch.cat((self.upconv2(dec3), enc1), dim=1), use_reentrant=False)
         dec1 = self.dec1(dec2)
@@ -124,28 +94,42 @@ class DiffusionModel(nn.Module):
         denoised_image = self.improved_sampling(noisy_step_image)
         return denoised_image
 
+
 def charbonnier_loss(pred, target, epsilon=1e-3):
     return torch.mean(torch.sqrt((pred - target) ** 2 + epsilon ** 2))
+
+def combined_loss(pred, target, mse_weight=0.5, charbonnier_weight=0.3, ssim_weight=0.2, epsilon=1e-3):
+    mse_loss = nn.MSELoss()(pred, target)
+    charbonnier = charbonnier_loss(pred, target, epsilon)
+    ssim_loss = 1 - pytorch_msssim.ssim(pred, target, data_range=1.0, size_average=True)
+
+    return mse_weight * mse_loss + charbonnier_weight * charbonnier + ssim_weight * ssim_loss
 
 # Define the checkpointed model and optimizer
 unet_checkpointed = UNet_S_Checkpointed().to(device)
 model_checkpointed = DiffusionModel(unet_checkpointed).to(device)
-optimizer = optim.AdamW(model_checkpointed.parameters(), lr=2e-4, betas=(0.9, 0.999))
-scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=10)
+optimizer = optim.Adam(model_checkpointed.parameters(), lr=2e-4, betas=(0.9, 0.999))
+scheduler = CosineAnnealingLR(optimizer, T_max=10)
 
 def denormalize(tensor):
     return tensor * 0.5 + 0.5
 
+def biased_t_sampling(batch_size, timesteps, device, bias=2.0):
+    t = torch.rand(batch_size, device=device)
+    t = t ** bias  # This will bias towards higher values
+    t = t * timesteps
+    return t.round().long()
+
 # Sample training loop
-def train_step_checkpointed(model, clean_images, noisy_images, optimizer):
+def train_step_checkpointed(model, clean_images, noisy_images, optimizer, bias=2.0):
     model.train()
     optimizer.zero_grad()
     
     batch_size = clean_images.size(0)
     timesteps = model.timesteps
     
-    # Sample a random timestep uniformly for each image in the batch
-    t = torch.randint(0, timesteps + 1, (batch_size,), device=clean_images.device).float()
+    # Sample a random timestep using the biased sampling method
+    t = biased_t_sampling(batch_size, timesteps, clean_images.device, bias).float()
     
     # Normalize the timestep
     t_normalized = t / timesteps
@@ -166,73 +150,86 @@ def train_step_checkpointed(model, clean_images, noisy_images, optimizer):
     # Denoise the interpolated image
     denoised_images = model.unet(interpolated_images, t_tensor)
     
-    # Calculate the loss
-    loss = charbonnier_loss(denoised_images, clean_images.to(device))
+    # Calculate the combined loss
+    loss = combined_loss(denoised_images, clean_images.to(device))
     loss.backward()
     optimizer.step()
     
     return loss.item()
 
-def train_model_checkpointed(model, train_loader, optimizer, scheduler, writer, num_epochs=10):
-    for epoch in range(num_epochs):
+def train_model_checkpointed(model, train_loader, optimizer, scheduler, writer, num_epochs=10, start_epoch=0, bias=2.0):
+    for epoch in range(start_epoch, num_epochs):
         # Training phase
         model.train()
         for batch_idx, (noisy_images, clean_images) in enumerate(train_loader):
             noisy_images, clean_images = noisy_images.to(device), clean_images.to(device)
-            loss = train_step_checkpointed(model, clean_images, noisy_images, optimizer)
+            loss = train_step_checkpointed(model, clean_images, noisy_images, optimizer, bias)
             print(f"Epoch [{epoch + 1}/{num_epochs}], Batch [{batch_idx + 1}/{len(train_loader)}], Loss: {loss:.4f}")
             
             writer.add_scalar('Loss/train', loss, epoch * len(train_loader) + batch_idx)
         
-        # Validation phase
+        # Validation phase (on a single batch)
         model.eval()
-        validation_loss = 0
         with torch.no_grad():
-            for batch_idx, (noisy_images, clean_images) in enumerate(val_loader):
-                noisy_images, clean_images = noisy_images.to(device), clean_images.to(device)
+            # Get a single batch from the validation loader
+            val_noisy_images, val_clean_images = next(iter(val_loader))
+            val_noisy_images, val_clean_images = val_noisy_images.to(device), val_clean_images.to(device)
 
-                # Generate denoised images using only the noisy images
-                denoised_images = model.improved_sampling(noisy_images)
-                
-                # Calculate validation loss
-                loss = charbonnier_loss(denoised_images, clean_images)
-                validation_loss += loss.item()
+            # Generate denoised images using only the noisy images
+            denoised_images = model.improved_sampling(val_noisy_images)
+            
+            # Calculate validation loss
+            validation_loss = combined_loss(denoised_images, val_clean_images)
 
-                # Denormalize images for visualization
-                clean_images = denormalize(clean_images.cpu())
-                noisy_images = denormalize(noisy_images.cpu())
-                denoised_images = denormalize(denoised_images.cpu())
-                
-                # Create image grids
-                grid_clean = make_grid(clean_images[:10], nrow=4, normalize=True)  # Only show 10 images
-                grid_noisy = make_grid(noisy_images[:10], nrow=4, normalize=True)
-                grid_denoised = make_grid(denoised_images[:10], nrow=4, normalize=True)
-                
-                # Add images to TensorBoard
-                writer.add_image(f'Epoch_{epoch + 1}/Clean Images', grid_clean, epoch + 1)
-                writer.add_image(f'Epoch_{epoch + 1}/Noisy Images', grid_noisy, epoch + 1)
-                writer.add_image(f'Epoch_{epoch + 1}/Denoised Images', grid_denoised, epoch + 1)
+            # Denormalize images for visualization
+            val_clean_images = denormalize(val_clean_images.cpu())
+            val_noisy_images = denormalize(val_noisy_images.cpu())
+            denoised_images = denormalize(denoised_images.cpu())
+            
+            # Create image grids
+            grid_clean = make_grid(val_clean_images[:10], nrow=4, normalize=True)  # Only show 10 images
+            grid_noisy = make_grid(val_noisy_images[:10], nrow=4, normalize=True)
+            grid_denoised = make_grid(denoised_images[:10], nrow=4, normalize=True)
+            
+            # Add images to TensorBoard
+            writer.add_image(f'Epoch_{epoch + 1}/Clean Images', grid_clean, epoch + 1)
+            writer.add_image(f'Epoch_{epoch + 1}/Noisy Images', grid_noisy, epoch + 1)
+            writer.add_image(f'Epoch_{epoch + 1}/Denoised Images', grid_denoised, epoch + 1)
              
-                if batch_idx >= 0:  # Change this if you want more batches
-                    break
-
         # Log validation loss
         validation_loss /= len(val_loader)
         print(f"Epoch [{epoch + 1}/{num_epochs}], Validation Loss: {validation_loss:.4f}")
         writer.add_scalar('Loss/validation', validation_loss, epoch + 1)
         
         writer.flush()
-        
+
         scheduler.step()
 
         # Save the model checkpoint after each epoch
         checkpoint_path = os.path.join("checkpoints", f"diffusion_model_checkpointed_epoch_{epoch + 1}.pth")
         os.makedirs(os.path.dirname(checkpoint_path), exist_ok=True)
         torch.save({
+            'epoch': epoch + 1,
             'model_state_dict': model.state_dict(),
-            'optimizer_state_dict': optimizer.state_dict()
+            'optimizer_state_dict': optimizer.state_dict(),
+            'scheduler_state_dict': scheduler.state_dict()
         }, checkpoint_path)
         print(f"Model checkpoint saved at {checkpoint_path}")
+
+def load_checkpoint(model, optimizer, scheduler, checkpoint_path):
+    if os.path.isfile(checkpoint_path):
+        print(f"Loading checkpoint '{checkpoint_path}'")
+        checkpoint = torch.load(checkpoint_path)
+        model.load_state_dict(checkpoint['model_state_dict'])
+        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
+        start_epoch = checkpoint['epoch']
+        print(f"Loaded checkpoint '{checkpoint_path}' (epoch {start_epoch})")
+        return start_epoch
+    else:
+        print(f"No checkpoint found at '{checkpoint_path}'")
+        return 0
+
 
 def start_tensorboard(log_dir):
     try:
@@ -252,6 +249,11 @@ if __name__ == "__main__":
     start_tensorboard(log_dir)
     
     image_folder = 'DIV2K_train_HR.nosync'
-    train_loader, val_loader = load_data(image_folder, batch_size=32, augment=False, dataset_percentage=0.01, validation_split=0.1)
-    train_model_checkpointed(model_checkpointed, train_loader, optimizer, scheduler, writer, num_epochs=40)
+    train_loader, val_loader = load_data(image_folder, batch_size=64, augment=False, dataset_percentage=0.01, validation_split=0.1, use_rgb=True, num_workers=8)
+    
+    # Load checkpoint if exists
+    checkpoint_path = os.path.join("checkpoints", "diffusion_model_checkpointed_last.pth")
+    start_epoch = load_checkpoint(model_checkpointed, optimizer, scheduler, checkpoint_path)
+    
+    train_model_checkpointed(model_checkpointed, train_loader, optimizer, scheduler, writer, num_epochs=200, start_epoch=start_epoch)
     writer.close()

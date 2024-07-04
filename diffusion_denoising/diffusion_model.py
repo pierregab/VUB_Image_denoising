@@ -152,7 +152,7 @@ def train_step_checkpointed(model, clean_images, noisy_images, optimizer):
     
     return loss.item()
 
-def train_model_checkpointed(model, train_loader, optimizer, scheduler, writer, num_epochs=10, start_epoch=0):
+def train_model_checkpointed(model, train_loader, val_loader, optimizer, scheduler, writer, num_epochs=10, start_epoch=0):
     for epoch in range(start_epoch, num_epochs):
         # Training phase
         model.train()
@@ -163,39 +163,35 @@ def train_model_checkpointed(model, train_loader, optimizer, scheduler, writer, 
             
             writer.add_scalar('Loss/train', loss, epoch * len(train_loader) + batch_idx)
         
-        # Validation phase
+        # Validation phase (on a single batch)
         model.eval()
-        validation_loss = 0
         with torch.no_grad():
-            for batch_idx, (noisy_images, clean_images) in enumerate(val_loader):
-                noisy_images, clean_images = noisy_images.to(device), clean_images.to(device)
+            # Get a single batch from the validation loader
+            val_noisy_images, val_clean_images = next(iter(val_loader))
+            val_noisy_images, val_clean_images = val_noisy_images.to(device), val_clean_images.to(device)
 
-                # Generate denoised images using only the noisy images
-                denoised_images = model.improved_sampling(noisy_images)
-                
-                # Calculate validation loss
-                loss = combined_loss(denoised_images, clean_images)
-                validation_loss += loss.item()
+            # Generate denoised images using only the noisy images
+            denoised_images = model.improved_sampling(val_noisy_images)
+            
+            # Calculate validation loss
+            validation_loss = combined_loss(denoised_images, val_clean_images)
 
-                # Denormalize images for visualization
-                clean_images = denormalize(clean_images.cpu())
-                noisy_images = denormalize(noisy_images.cpu())
-                denoised_images = denormalize(denoised_images.cpu())
-                
-                # Create image grids
-                grid_clean = make_grid(clean_images[:10], nrow=4, normalize=True)  # Only show 10 images
-                grid_noisy = make_grid(noisy_images[:10], nrow=4, normalize=True)
-                grid_denoised = make_grid(denoised_images[:10], nrow=4, normalize=True)
-                
-                # Add images to TensorBoard for the first batch
-                if batch_idx == 0:
-                    writer.add_image(f'Epoch_{epoch + 1}/Clean Images', grid_clean, epoch + 1)
-                    writer.add_image(f'Epoch_{epoch + 1}/Noisy Images', grid_noisy, epoch + 1)
-                    writer.add_image(f'Epoch_{epoch + 1}/Denoised Images', grid_denoised, epoch + 1)
-             
+            # Denormalize images for visualization
+            val_clean_images = denormalize(val_clean_images.cpu())
+            val_noisy_images = denormalize(val_noisy_images.cpu())
+            denoised_images = denormalize(denoised_images.cpu())
+            
+            # Create image grids
+            grid_clean = make_grid(val_clean_images[:10], nrow=4, normalize=True)  # Only show 10 images
+            grid_noisy = make_grid(val_noisy_images[:10], nrow=4, normalize=True)
+            grid_denoised = make_grid(denoised_images[:10], nrow=4, normalize=True)
+            
+            # Add images to TensorBoard
+            writer.add_image(f'Epoch_{epoch + 1}/Clean Images', grid_clean, epoch + 1)
+            writer.add_image(f'Epoch_{epoch + 1}/Noisy Images', grid_noisy, epoch + 1)
+            writer.add_image(f'Epoch_{epoch + 1}/Denoised Images', grid_denoised, epoch + 1)
 
         # Log validation loss
-        validation_loss /= len(val_loader)
         print(f"Epoch [{epoch + 1}/{num_epochs}], Validation Loss: {validation_loss:.4f}")
         writer.add_scalar('Loss/validation', validation_loss, epoch + 1)
         
