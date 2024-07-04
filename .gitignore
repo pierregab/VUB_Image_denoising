@@ -7,3 +7,4 @@ evaluate_SIDD/ValidationGtBlocksRaw.mat
 evaluate_SIDD/ValidationNoisyBlocksRaw.mat
 evaluate_SIDD/BenchmarkBlocks32.mat
 checkpoints/
+runs/

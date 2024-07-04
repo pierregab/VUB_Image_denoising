@@ -206,7 +206,7 @@ def train_model_checkpointed(model, train_loader, optimizer, scheduler, writer, 
         scheduler.step()
 
         # Save the model checkpoint after each epoch
-        checkpoint_path = os.path.join("checkpoints", f"diffusion_model_checkpointed_epoch_{epoch + 1}.pth")
+        checkpoint_path = os.path.join("checkpoints", f"improved_diffusion_model_checkpointed_epoch_{epoch + 1}.pth")
         os.makedirs(os.path.dirname(checkpoint_path), exist_ok=True)
         torch.save({
             'epoch': epoch + 1,
@@ -219,7 +219,8 @@ def train_model_checkpointed(model, train_loader, optimizer, scheduler, writer, 
 def load_checkpoint(model, optimizer, scheduler, checkpoint_path):
     if os.path.isfile(checkpoint_path):
         print(f"Loading checkpoint '{checkpoint_path}'")
-        checkpoint = torch.load(checkpoint_path)
+        # load on cuda or mps device
+        checkpoint = torch.load(checkpoint_path, map_location=device)
         model.load_state_dict(checkpoint['model_state_dict'])
         optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
         scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
@@ -239,21 +240,24 @@ def start_tensorboard(log_dir):
         print(f"Failed to start TensorBoard: {e}")
 
 if __name__ == "__main__":
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()
-    if torch.backends.mps.is_available():
-        torch.mps.empty_cache()
+    try:
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        if torch.backends.mps.is_available():
+            torch.mps.empty_cache()
 
-    log_dir = os.path.join("runs", "diffusion_checkpointed")
-    writer = SummaryWriter(log_dir=log_dir)
-    start_tensorboard(log_dir)
-    
-    image_folder = 'DIV2K_train_HR.nosync'
-    train_loader, val_loader = load_data(image_folder, batch_size=64, augment=False, dataset_percentage=0.01, validation_split=0.1, use_rgb=True, num_workers=8)
-    
-    # Load checkpoint if exists
-    checkpoint_path = os.path.join("checkpoints", "diffusion_model_checkpointed_last.pth")
-    start_epoch = load_checkpoint(model_checkpointed, optimizer, scheduler, checkpoint_path)
-    
-    train_model_checkpointed(model_checkpointed, train_loader, optimizer, scheduler, writer, num_epochs=200, start_epoch=start_epoch)
-    writer.close()
+        log_dir = os.path.join("runs", "diffusion_checkpointed")
+        writer = SummaryWriter(log_dir=log_dir)
+        start_tensorboard(log_dir)
+        
+        image_folder = 'DIV2K_train_HR.nosync'
+        train_loader, val_loader = load_data(image_folder, batch_size=64, augment=False, dataset_percentage=0.1, validation_split=0.1, use_rgb=True, num_workers=8)
+        
+        # Load checkpoint if exists
+        checkpoint_path = os.path.join("checkpoints", "improved_diffusion_model_checkpointed_epoch_200.pth")
+        start_epoch = load_checkpoint(model_checkpointed, optimizer, scheduler, checkpoint_path)
+        
+        train_model_checkpointed(model_checkpointed, train_loader, val_loader, optimizer, scheduler, writer, num_epochs=100, start_epoch=start_epoch)
+        writer.close()
+    except Exception as e:
+        print(f"An error occurred: {e}")
