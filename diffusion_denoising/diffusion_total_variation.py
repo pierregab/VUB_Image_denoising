@@ -11,6 +11,7 @@ import time
 import torch.utils.checkpoint as cp
 from torch.optim.lr_scheduler import CosineAnnealingLR
 import pytorch_msssim
+import torchvision.models as models
 
 # Assuming your script is in RCA_GAN and the project root is one level up
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
@@ -93,7 +94,22 @@ class DiffusionModel(nn.Module):
         noisy_step_image = self.forward_diffusion(clean_image, noisy_image, t)
         denoised_image = self.improved_sampling(noisy_step_image)
         return denoised_image
+    
+class VGGPerceptualLoss(nn.Module):
+    def __init__(self):
+        super(VGGPerceptualLoss, self).__init__()
+        vgg = models.vgg16(pretrained=True).features[:29].eval().to(device)
+        for param in vgg.parameters():
+            param.requires_grad = False
+        self.vgg = vgg
+        self.mse = nn.MSELoss()
 
+    def forward(self, input, target):
+        vgg_input = self.vgg(input)
+        vgg_target = self.vgg(target)
+        return self.mse(vgg_input, vgg_target)
+
+perceptual_loss = VGGPerceptualLoss().to(device)
 
 def total_variation(image):
     # Compute differences
@@ -116,8 +132,16 @@ def total_variation_loss(pred, target):
     # Compute the absolute difference between the two total variations
     return torch.abs(tv_pred - tv_target)
 
+def charbonnier_loss(pred, target, epsilon=1e-3):
+    return torch.mean(torch.sqrt((pred - target) ** 2 + epsilon ** 2))
+
 def combined_loss(pred, target):
-    return total_variation_loss(pred, target)
+    mse_loss = nn.MSELoss()(pred, target)
+    ssim_loss = 1 - pytorch_msssim.ssim(pred, target)
+    tv_loss = total_variation_loss(pred, target)
+    perc_loss = perceptual_loss(pred, target)
+    
+    return 0.3 * mse_loss + 0.3 * ssim_loss + 0.2 * tv_loss + 0.2 * perc_loss
 
 # Define the checkpointed model and optimizer
 unet_checkpointed = UNet_S_Checkpointed().to(device)
