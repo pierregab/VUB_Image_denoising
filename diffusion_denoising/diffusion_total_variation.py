@@ -138,10 +138,11 @@ def charbonnier_loss(pred, target, epsilon=1e-3):
 def combined_loss(pred, target):
     mse_loss = nn.MSELoss()(pred, target)
     ssim_loss = 1 - pytorch_msssim.ssim(pred, target)
-    tv_loss = total_variation_loss(pred, target)
+    tv_loss = total_variation(pred)  # Apply TV only to predicted image
     perc_loss = perceptual_loss(pred, target)
     
-    return 0.3 * mse_loss + 0.3 * ssim_loss + 0.2 * tv_loss + 0.2 * perc_loss
+    # Increase the weight of TV loss for more smoothing
+    return 0.3 * mse_loss + 0.3 * ssim_loss + 0.3 * tv_loss + 0.1 * perc_loss
 
 # Define the checkpointed model and optimizer
 unet_checkpointed = UNet_S_Checkpointed().to(device)
