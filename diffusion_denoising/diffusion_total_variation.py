@@ -284,7 +284,7 @@ if __name__ == "__main__":
         start_tensorboard(log_dir)
         
         image_folder = 'DIV2K_train_HR.nosync'
-        train_loader, val_loader = load_data(image_folder, batch_size=64, augment=False, dataset_percentage=0.1, validation_split=0.1, use_rgb=True, num_workers=8)
+        train_loader, val_loader = load_data(image_folder, batch_size=32, augment=False, dataset_percentage=0.1, validation_split=0.1, use_rgb=True, num_workers=8)
         
         # Load checkpoint if exists
         checkpoint_path = os.path.join("checkpoints", "diffusion_tv_model_checkpointed_epoch_200.pth")
