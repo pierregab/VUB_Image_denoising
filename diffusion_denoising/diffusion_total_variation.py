@@ -257,7 +257,7 @@ if __name__ == "__main__":
         checkpoint_path = os.path.join("checkpoints", "diffusion_tv_model_checkpointed_epoch_200.pth")
         start_epoch = load_checkpoint(model_checkpointed, optimizer, scheduler, checkpoint_path)
         
-        train_model_checkpointed(model_checkpointed, train_loader, val_loader, optimizer, scheduler, writer, num_epochs=300, start_epoch=start_epoch)
+        train_model_checkpointed(model_checkpointed, train_loader, val_loader, optimizer, scheduler, writer, num_epochs=200, start_epoch=start_epoch)
         writer.close()
     except Exception as e:
         print(f"An error occurred: {e}")
