@@ -406,11 +406,11 @@ if __name__ == "__main__":
     diffusion_model_infos = {
         "Diffusion_Model_A": {
             "paths": [f"checkpoints/diffusion_model_checkpointed_epoch_{epoch}.pth" for epoch in [200]],
-            "epochs": [240],
+            "epochs": [200],
         },
         "Diffusion_Model_B": {
             "paths": [f"checkpoints/diffusion_tv_model_checkpointed_epoch_{epoch}.pth" for epoch in [32]],
-            "epochs": [180, 240],
+            "epochs": [32],
         },
     }
     unet_model_path = "checkpoints/unet_denoising.pth"
