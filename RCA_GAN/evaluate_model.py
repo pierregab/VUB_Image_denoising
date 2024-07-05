@@ -401,7 +401,7 @@ if __name__ == "__main__":
     train_noise_levels = [10, 20, 30, 40, 50, 60, 70, 80]
     val_noise_levels = [10, 20, 30, 40, 50, 60, 70, 80]
 
-    train_loader, val_loader = load_data(image_folder, batch_size=1, num_workers=8, validation_split=0.5, augment=False, dataset_percentage=0.1, only_validation=False, include_noise_level=True, train_noise_levels=train_noise_levels, val_noise_levels=val_noise_levels, use_rgb=True)
+    train_loader, val_loader = load_data(image_folder, batch_size=1, num_workers=8, validation_split=0.5, augment=False, dataset_percentage=0.01, only_validation=False, include_noise_level=True, train_noise_levels=train_noise_levels, val_noise_levels=val_noise_levels, use_rgb=True)
 
     diffusion_model_infos = {
         "Diffusion_Model_A": {
