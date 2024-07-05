@@ -142,7 +142,7 @@ def combined_loss(pred, target):
     perc_loss = perceptual_loss(pred, target)
     
     # Increase the weight of TV loss for more smoothing
-    return 0.3 * mse_loss + 0.3 * ssim_loss + 0.3 * tv_loss + 0.1 * perc_loss
+    return 0.3 * mse_loss + 0.3 * ssim_loss + 1 * tv_loss + 0.1 * perc_loss
 
 # Define the checkpointed model and optimizer
 unet_checkpointed = UNet_S_Checkpointed().to(device)
