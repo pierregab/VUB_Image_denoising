@@ -95,20 +95,29 @@ class DiffusionModel(nn.Module):
         return denoised_image
 
 
-def charbonnier_loss(pred, target, epsilon=1e-3):
-    return torch.mean(torch.sqrt((pred - target) ** 2 + epsilon ** 2))
-
-def total_variation_loss(image):
-    return torch.mean(torch.abs(image[:, :, :, :-1] - image[:, :, :, 1:])) + \
-           torch.mean(torch.abs(image[:, :, :-1, :] - image[:, :, 1:, :]))
-
-def combined_loss(pred, target, mse_weight=0.4, charbonnier_weight=0.2, ssim_weight=0.2, tv_weight=0.2, epsilon=1e-3):
-    mse_loss = nn.MSELoss()(pred, target)
-    charbonnier = charbonnier_loss(pred, target, epsilon)
-    ssim_loss = 1 - pytorch_msssim.ssim(pred, target, data_range=1.0, size_average=True)
-    tv_loss = total_variation_loss(pred)
+def total_variation(image):
+    # Compute differences
+    diff_h = image[:, :, :, 1:] - image[:, :, :, :-1]
+    diff_v = image[:, :, 1:, :] - image[:, :, :-1, :]
     
-    return mse_weight * mse_loss + charbonnier_weight * charbonnier + ssim_weight * ssim_loss + tv_weight * tv_loss
+    # Sum of absolute differences
+    tv_h = torch.abs(diff_h).sum()
+    tv_v = torch.abs(diff_v).sum()
+    
+    # Normalize by the number of elements
+    num_elements = image.numel()
+    return (tv_h + tv_v) / num_elements
+
+def total_variation_loss(pred, target):
+    # Compute total variation for both predicted and target images
+    tv_pred = total_variation(pred)
+    tv_target = total_variation(target)
+    
+    # Compute the absolute difference between the two total variations
+    return torch.abs(tv_pred - tv_target)
+
+def combined_loss(pred, target):
+    return total_variation_loss(pred, target)
 
 # Define the checkpointed model and optimizer
 unet_checkpointed = UNet_S_Checkpointed().to(device)
@@ -261,3 +270,4 @@ if __name__ == "__main__":
         writer.close()
     except Exception as e:
         print(f"An error occurred: {e}")
+ 
