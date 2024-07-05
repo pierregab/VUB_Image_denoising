@@ -142,7 +142,8 @@ def combined_loss(pred, target):
     perc_loss = perceptual_loss(pred, target)
     
     # Increase the weight of TV loss for more smoothing
-    return 0.3 * mse_loss + 0.3 * ssim_loss + 1 * tv_loss + 0.1 * perc_loss
+    combined = 0.3 * mse_loss + 0.3 * ssim_loss + 1 * tv_loss + 0.1 * perc_loss
+    return combined, mse_loss, ssim_loss, tv_loss, perc_loss
 
 # Define the checkpointed model and optimizer
 unet_checkpointed = UNet_S_Checkpointed().to(device)
@@ -154,7 +155,7 @@ def denormalize(tensor):
     return tensor * 0.5 + 0.5
 
 # Sample training loop
-def train_step_checkpointed(model, clean_images, noisy_images, optimizer):
+def train_step_checkpointed(model, clean_images, noisy_images, optimizer, writer, epoch, batch_idx, train_loader_length):
     model.train()
     optimizer.zero_grad()
     
@@ -184,10 +185,15 @@ def train_step_checkpointed(model, clean_images, noisy_images, optimizer):
     denoised_images = model.unet(interpolated_images, t_tensor)
     
     # Calculate the combined loss
-    loss = combined_loss(denoised_images, clean_images.to(device))
+    loss, mse_loss, ssim_loss, tv_loss, perc_loss = combined_loss(denoised_images, clean_images.to(device))
     loss.backward()
     optimizer.step()
 
+    # Log individual losses
+    writer.add_scalar('Loss/train_mse', mse_loss.item(), epoch * train_loader_length + batch_idx)
+    writer.add_scalar('Loss/train_ssim', ssim_loss.item(), epoch * train_loader_length + batch_idx)
+    writer.add_scalar('Loss/train_tv', tv_loss.item(), epoch * train_loader_length + batch_idx)
+    writer.add_scalar('Loss/train_perceptual', perc_loss.item(), epoch * train_loader_length + batch_idx)
     
     return loss.item()
 
@@ -197,7 +203,7 @@ def train_model_checkpointed(model, train_loader, val_loader, optimizer, schedul
         model.train()
         for batch_idx, (noisy_images, clean_images) in enumerate(train_loader):
             noisy_images, clean_images = noisy_images.to(device), clean_images.to(device)
-            loss = train_step_checkpointed(model, clean_images, noisy_images, optimizer)
+            loss = train_step_checkpointed(model, clean_images, noisy_images, optimizer, writer, epoch, batch_idx, len(train_loader))
             print(f"Epoch [{epoch + 1}/{num_epochs}], Batch [{batch_idx + 1}/{len(train_loader)}], Loss: {loss:.4f}")
             
             writer.add_scalar('Loss/train', loss, epoch * len(train_loader) + batch_idx)
@@ -213,7 +219,14 @@ def train_model_checkpointed(model, train_loader, val_loader, optimizer, schedul
             denoised_images = model.improved_sampling(val_noisy_images)
             
             # Calculate validation loss
-            validation_loss = combined_loss(denoised_images, val_clean_images)
+            validation_loss, mse_loss, ssim_loss, tv_loss, perc_loss = combined_loss(denoised_images, val_clean_images)
+
+            # Log validation losses
+            writer.add_scalar('Loss/validation', validation_loss.item(), epoch + 1)
+            writer.add_scalar('Loss/validation_mse', mse_loss.item(), epoch + 1)
+            writer.add_scalar('Loss/validation_ssim', ssim_loss.item(), epoch + 1)
+            writer.add_scalar('Loss/validation_tv', tv_loss.item(), epoch + 1)
+            writer.add_scalar('Loss/validation_perceptual', perc_loss.item(), epoch + 1)
 
             # Denormalize images for visualization
             val_clean_images = denormalize(val_clean_images.cpu())
@@ -230,9 +243,7 @@ def train_model_checkpointed(model, train_loader, val_loader, optimizer, schedul
             writer.add_image(f'Epoch_{epoch + 1}/Noisy Images', grid_noisy, epoch + 1)
             writer.add_image(f'Epoch_{epoch + 1}/Denoised Images', grid_denoised, epoch + 1)
 
-        # Log validation loss
         print(f"Epoch [{epoch + 1}/{num_epochs}], Validation Loss: {validation_loss:.4f}")
-        writer.add_scalar('Loss/validation', validation_loss, epoch + 1)
         
         writer.flush()
 
@@ -248,6 +259,7 @@ def train_model_checkpointed(model, train_loader, val_loader, optimizer, schedul
             'scheduler_state_dict': scheduler.state_dict()
         }, checkpoint_path)
         print(f"Model checkpoint saved at {checkpoint_path}")
+
 
 
 def load_checkpoint(model, optimizer, scheduler, checkpoint_path):
