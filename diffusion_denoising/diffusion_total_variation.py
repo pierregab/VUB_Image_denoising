@@ -98,12 +98,17 @@ class DiffusionModel(nn.Module):
 def charbonnier_loss(pred, target, epsilon=1e-3):
     return torch.mean(torch.sqrt((pred - target) ** 2 + epsilon ** 2))
 
-def combined_loss(pred, target, mse_weight=0.5, charbonnier_weight=0.3, ssim_weight=0.2, epsilon=1e-3):
+def total_variation_loss(image):
+    return torch.mean(torch.abs(image[:, :, :, :-1] - image[:, :, :, 1:])) + \
+           torch.mean(torch.abs(image[:, :, :-1, :] - image[:, :, 1:, :]))
+
+def combined_loss(pred, target, mse_weight=0.4, charbonnier_weight=0.2, ssim_weight=0.2, tv_weight=0.2, epsilon=1e-3):
     mse_loss = nn.MSELoss()(pred, target)
     charbonnier = charbonnier_loss(pred, target, epsilon)
     ssim_loss = 1 - pytorch_msssim.ssim(pred, target, data_range=1.0, size_average=True)
-
-    return mse_weight * mse_loss + charbonnier_weight * charbonnier + ssim_weight * ssim_loss
+    tv_loss = total_variation_loss(pred)
+    
+    return mse_weight * mse_loss + charbonnier_weight * charbonnier + ssim_weight * ssim_loss + tv_weight * tv_loss
 
 # Define the checkpointed model and optimizer
 unet_checkpointed = UNet_S_Checkpointed().to(device)
@@ -114,27 +119,16 @@ scheduler = CosineAnnealingLR(optimizer, T_max=10)
 def denormalize(tensor):
     return tensor * 0.5 + 0.5
 
-def exponential_t_sampling(batch_size, timesteps, lambda_param=1.0):
-    # Generate exponentially distributed samples between 0 and 1
-    t = torch.distributions.Exponential(lambda_param).sample((batch_size,))
-    
-    # Normalize to [0, 1] range
-    t = 1 - torch.exp(-t)
-    
-    # Scale to timesteps
-    t = t * timesteps
-    return t.round().long()
-
 # Sample training loop
-def train_step_checkpointed(model, clean_images, noisy_images, optimizer, lambda_param=0.5):
+def train_step_checkpointed(model, clean_images, noisy_images, optimizer):
     model.train()
     optimizer.zero_grad()
     
     batch_size = clean_images.size(0)
     timesteps = model.timesteps
     
-    # Sample a random timestep using the exponential sampling method
-    t = exponential_t_sampling(batch_size, timesteps, lambda_param).float()
+    # Sample a random timestep uniformly for each image in the batch
+    t = torch.randint(0, timesteps + 1, (batch_size,), device=clean_images.device).float()
     
     # Normalize the timestep
     t_normalized = t / timesteps
@@ -159,16 +153,17 @@ def train_step_checkpointed(model, clean_images, noisy_images, optimizer, lambda
     loss = combined_loss(denoised_images, clean_images.to(device))
     loss.backward()
     optimizer.step()
+
     
     return loss.item()
 
-def train_model_checkpointed(model, train_loader, val_loader, optimizer, scheduler, writer, num_epochs=10, start_epoch=0, lambda_param=0.5):
+def train_model_checkpointed(model, train_loader, val_loader, optimizer, scheduler, writer, num_epochs=10, start_epoch=0):
     for epoch in range(start_epoch, num_epochs):
         # Training phase
         model.train()
         for batch_idx, (noisy_images, clean_images) in enumerate(train_loader):
             noisy_images, clean_images = noisy_images.to(device), clean_images.to(device)
-            loss = train_step_checkpointed(model, clean_images, noisy_images, optimizer, lambda_param)
+            loss = train_step_checkpointed(model, clean_images, noisy_images, optimizer)
             print(f"Epoch [{epoch + 1}/{num_epochs}], Batch [{batch_idx + 1}/{len(train_loader)}], Loss: {loss:.4f}")
             
             writer.add_scalar('Loss/train', loss, epoch * len(train_loader) + batch_idx)
@@ -200,9 +195,8 @@ def train_model_checkpointed(model, train_loader, val_loader, optimizer, schedul
             writer.add_image(f'Epoch_{epoch + 1}/Clean Images', grid_clean, epoch + 1)
             writer.add_image(f'Epoch_{epoch + 1}/Noisy Images', grid_noisy, epoch + 1)
             writer.add_image(f'Epoch_{epoch + 1}/Denoised Images', grid_denoised, epoch + 1)
-             
+
         # Log validation loss
-        validation_loss /= len(val_loader)
         print(f"Epoch [{epoch + 1}/{num_epochs}], Validation Loss: {validation_loss:.4f}")
         writer.add_scalar('Loss/validation', validation_loss, epoch + 1)
         
@@ -211,7 +205,7 @@ def train_model_checkpointed(model, train_loader, val_loader, optimizer, schedul
         scheduler.step()
 
         # Save the model checkpoint after each epoch
-        checkpoint_path = os.path.join("checkpoints", f"improved_diffusion_model_checkpointed_epoch_{epoch + 1}.pth")
+        checkpoint_path = os.path.join("checkpoints", f"diffusion_tv_model_checkpointed_epoch_{epoch + 1}.pth")
         os.makedirs(os.path.dirname(checkpoint_path), exist_ok=True)
         torch.save({
             'epoch': epoch + 1,
@@ -220,6 +214,7 @@ def train_model_checkpointed(model, train_loader, val_loader, optimizer, schedul
             'scheduler_state_dict': scheduler.state_dict()
         }, checkpoint_path)
         print(f"Model checkpoint saved at {checkpoint_path}")
+
 
 def load_checkpoint(model, optimizer, scheduler, checkpoint_path):
     if os.path.isfile(checkpoint_path):
@@ -259,10 +254,10 @@ if __name__ == "__main__":
         train_loader, val_loader = load_data(image_folder, batch_size=64, augment=False, dataset_percentage=0.1, validation_split=0.1, use_rgb=True, num_workers=8)
         
         # Load checkpoint if exists
-        checkpoint_path = os.path.join("checkpoints", "improved_diffusion_model_checkpointed_epoch_200.pth")
+        checkpoint_path = os.path.join("checkpoints", "diffusion_tv_model_checkpointed_epoch_200.pth")
         start_epoch = load_checkpoint(model_checkpointed, optimizer, scheduler, checkpoint_path)
         
-        train_model_checkpointed(model_checkpointed, train_loader, val_loader, optimizer, scheduler, writer, num_epochs=100, start_epoch=start_epoch, lambda_param=0.5)
+        train_model_checkpointed(model_checkpointed, train_loader, val_loader, optimizer, scheduler, writer, num_epochs=300, start_epoch=start_epoch)
         writer.close()
     except Exception as e:
         print(f"An error occurred: {e}")
