@@ -67,7 +67,7 @@ def compute_metrics(original, processed, lpips_model, dists_model, use_rgb=True)
 
     return psnr_value, ssim_value, lpips_value, dists_value
 
-def plot_example_images(example_images):
+def save_example_images(example_images, save_dir):
     noise_levels_to_plot = [15, 30, 50]
     filtered_images = {k: v for k, v in example_images.items() if k in noise_levels_to_plot}
 
@@ -98,16 +98,18 @@ def plot_example_images(example_images):
         axs[i, 3].axis('off')
 
     plt.tight_layout()
-    plt.show()
+    plt.savefig(os.path.join(save_dir, 'example_images.png'))
+    plt.close()
 
-def plot_error_map(gt_image, predicted_image):
+def save_error_map(gt_image, predicted_image, save_dir):
     error_map = np.abs(gt_image - predicted_image)
     plt.imshow(error_map, cmap='hot', interpolation='nearest')
     plt.colorbar()
     plt.title('Error Map')
-    plt.show()
+    plt.savefig(os.path.join(save_dir, 'error_map.png'))
+    plt.close()
 
-def plot_histograms_of_differences(example_images, last_epoch):
+def save_histograms_of_differences(example_images, last_epoch, save_dir):
     noise_levels_to_plot = [15, 30, 50]
     filtered_images = {k: v for k, v in example_images.items() if k[1] in noise_levels_to_plot and k[0] == last_epoch}
 
@@ -135,9 +137,10 @@ def plot_histograms_of_differences(example_images, last_epoch):
         axs[i, 1].set_ylabel('Frequency')
 
     plt.tight_layout()
-    plt.show()
+    plt.savefig(os.path.join(save_dir, 'histograms_of_differences.png'))
+    plt.close()
 
-def plot_heatmaps(aggregated_diff_map_unet, aggregated_diff_map_diffusion):
+def save_heatmaps(aggregated_diff_map_unet, aggregated_diff_map_diffusion, save_dir):
     fig, axs = plt.subplots(1, 2, figsize=(20, 10))
 
     if aggregated_diff_map_unet.ndim == 3:
@@ -157,9 +160,10 @@ def plot_heatmaps(aggregated_diff_map_unet, aggregated_diff_map_diffusion):
     fig.colorbar(im_diffusion, ax=axs[1], orientation='vertical')
 
     plt.tight_layout()
-    plt.show()
+    plt.savefig(os.path.join(save_dir, 'heatmaps.png'))
+    plt.close()
 
-def frequency_domain_analysis(metrics, last_epoch):
+def save_frequency_domain_analysis(metrics, last_epoch, save_dir):
     epochs = sorted(set(metrics['epoch']))
     noise_levels = np.array(metrics['noise_level'])
     unique_noise_levels = sorted(np.unique(noise_levels))
@@ -200,11 +204,14 @@ def frequency_domain_analysis(metrics, last_epoch):
     plt.legend()
     plt.grid()
     plt.tight_layout()
-    plt.show()
+    plt.savefig(os.path.join(save_dir, 'frequency_domain_analysis.png'))
+    plt.close()
 
-def evaluate_model_and_plot(epochs, diffusion_model_paths, unet_model_path, val_loader, device, include_noise_level=False, use_bm3d=False):
+def evaluate_model_and_plot(epochs, diffusion_model_paths, unet_model_path, val_loader, device, include_noise_level=False, use_bm3d=False, save_dir='results', studies=None):
     if use_bm3d:
         import bm3d
+
+    os.makedirs(save_dir, exist_ok=True)
 
     lpips_model = lpips.LPIPS(net='alex').to(device)
     dists_model = DISTS().to(device)
@@ -312,21 +319,23 @@ def evaluate_model_and_plot(epochs, diffusion_model_paths, unet_model_path, val_
     aggregated_diff_map_unet /= count
     aggregated_diff_map_diffusion /= count
 
-    plot_metrics(metrics, epochs[-1], use_bm3d)
-    plot_dists(metrics, epochs[-1])
-    print("Example images keys:", example_images.keys())
-
-    plot_histograms_of_differences(example_images, epochs[-1])
-    plot_heatmaps(aggregated_diff_map_unet, aggregated_diff_map_diffusion)
-
+    if studies is None or 'metrics' in studies:
+        save_metrics(metrics, epochs[-1], use_bm3d, save_dir)
+    if studies is None or 'dists' in studies:
+        save_dists(metrics, epochs[-1], save_dir)
     if example_images:
-        plot_example_images({key[1]: value for key, value in example_images.items()})
+        if studies is None or 'example_images' in studies:
+            save_example_images({key[1]: value for key, value in example_images.items()}, save_dir)
+        if studies is None or 'histograms_of_differences' in studies:
+            save_histograms_of_differences(example_images, epochs[-1], save_dir)
     else:
         print("No example images to plot.")
+    if studies is None or 'heatmaps' in studies:
+        save_heatmaps(aggregated_diff_map_unet, aggregated_diff_map_diffusion, save_dir)
+    if studies is None or 'frequency_domain_analysis' in studies:
+        save_frequency_domain_analysis(metrics, epochs[-1], save_dir)
 
-    frequency_domain_analysis(metrics, epochs[-1])
-
-def plot_metrics(metrics, last_epoch, use_bm3d):
+def save_metrics(metrics, last_epoch, use_bm3d, save_dir):
     epochs = sorted(set(metrics['epoch']))
     noise_levels = np.array(metrics['noise_level'])
     psnr_degraded = np.array(metrics['psnr_degraded'])
@@ -424,9 +433,10 @@ def plot_metrics(metrics, last_epoch, use_bm3d):
     axs[2, 1].grid()
 
     plt.tight_layout()
-    plt.show()
+    plt.savefig(os.path.join(save_dir, 'metrics.png'))
+    plt.close()
 
-def plot_dists(metrics, last_epoch):
+def save_dists(metrics, last_epoch, save_dir):
     epochs = sorted(set(metrics['epoch']))
     noise_levels = np.array(metrics['noise_level'])
     dists_degraded = np.array(metrics['dists_degraded'])
@@ -455,7 +465,8 @@ def plot_dists(metrics, last_epoch):
     axs.grid()
 
     plt.tight_layout()
-    plt.show()
+    plt.savefig(os.path.join(save_dir, 'dists.png'))
+    plt.close()
 
 if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() else "mps")
@@ -469,4 +480,8 @@ if __name__ == "__main__":
     epochs_to_evaluate = [200]
     diffusion_model_paths = [f"checkpoints/diffusion_model_checkpointed_epoch_{epoch}.pth" for epoch in epochs_to_evaluate]
     unet_model_path = "checkpoints/unet_denoising.pth"
-    evaluate_model_and_plot(epochs_to_evaluate, diffusion_model_paths, unet_model_path, val_loader=val_loader, device=device, include_noise_level=True, use_bm3d=False)
+
+    selected_studies = ['metrics', 'dists', 'example_images', 'histograms_of_differences', 'heatmaps', 'frequency_domain_analysis']
+    save_directory = 'evaluation_results'
+
+    evaluate_model_and_plot(epochs_to_evaluate, diffusion_model_paths, unet_model_path, val_loader=val_loader, device=device, include_noise_level=True, use_bm3d=False, save_dir=save_directory, studies=selected_studies)
