@@ -23,11 +23,16 @@ from diffusion_denoising.diffusion_model import UNet_S_Checkpointed, DiffusionMo
 device = torch.device("cuda" if torch.cuda.is_available() else "mps")
 
 # Frequency Domain Analysis
-def frequency_domain_analysis(images, titles):
+def frequency_domain_analysis(images, titles, gt_image):
     plt.figure(figsize=(20, 5))
     for i, img in enumerate(images):
         f, Pxx_den = welch(img.flatten(), nperseg=256)
-        plt.semilogy(f, Pxx_den, label=titles[i])
+        if i == 0:
+            gt_f, gt_Pxx_den = f, Pxx_den
+            plt.semilogy(f, Pxx_den, label=titles[i])
+        else:
+            plt.semilogy(f, Pxx_den, label=titles[i])
+            plt.semilogy(f, np.abs(Pxx_den - gt_Pxx_den), '--', label=f'{titles[i]} - Ground Truth')
     plt.xlabel('frequency [Hz]')
     plt.ylabel('PSD [V**2/Hz]')
     plt.legend()
@@ -143,7 +148,7 @@ def main():
 
             # Frequency Domain Analysis
             frequency_domain_analysis([gt_img_np, degraded_img_np, predicted_unet_np, predicted_diffusion_np],
-                                      ['Ground Truth', 'Noisy', 'UNet', 'Diffusion'])
+                                      ['Ground Truth', 'Noisy', 'UNet', 'Diffusion'], gt_img_np)
 
             # Edge Preservation Metrics
             edge_preservation_metrics(gt_img_np, predicted_unet_np)

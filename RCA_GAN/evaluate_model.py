@@ -9,6 +9,7 @@ import sys
 from tqdm import tqdm
 import lpips
 from DISTS_pytorch import DISTS  # Import DISTS
+from scipy.signal import welch
 
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 sys.path.append(project_root)
@@ -158,6 +159,49 @@ def plot_heatmaps(aggregated_diff_map_unet, aggregated_diff_map_diffusion):
     plt.tight_layout()
     plt.show()
 
+def frequency_domain_analysis(metrics, last_epoch):
+    epochs = sorted(set(metrics['epoch']))
+    noise_levels = np.array(metrics['noise_level'])
+    unique_noise_levels = sorted(np.unique(noise_levels))
+
+    avg_mae_diff_unet = []
+    avg_mae_diff_diffusion = []
+
+    for nl in unique_noise_levels:
+        idx = (noise_levels == nl) & (np.array(metrics['epoch']) == last_epoch)
+        mae_diff_unet = []
+        mae_diff_diffusion = []
+
+        for gt_image, predicted_unet_image, predicted_diffusion_image in zip(
+            np.array(metrics['gt_image'])[idx],
+            np.array(metrics['predicted_unet_image'])[idx],
+            np.array(metrics['predicted_diffusion_image'])[idx]
+        ):
+            gt_image = gt_image.squeeze()
+            predicted_unet_image = predicted_unet_image.squeeze()
+            predicted_diffusion_image = predicted_diffusion_image.squeeze()
+
+            f, Pxx_gt = welch(gt_image.flatten(), nperseg=256)
+            _, Pxx_unet = welch(predicted_unet_image.flatten(), nperseg=256)
+            _, Pxx_diffusion = welch(predicted_diffusion_image.flatten(), nperseg=256)
+
+            mae_diff_unet.append(np.mean(np.abs(Pxx_gt - Pxx_unet)))
+            mae_diff_diffusion.append(np.mean(np.abs(Pxx_gt - Pxx_diffusion)))
+
+        avg_mae_diff_unet.append(np.mean(mae_diff_unet))
+        avg_mae_diff_diffusion.append(np.mean(mae_diff_diffusion))
+
+    plt.figure(figsize=(10, 6))
+    plt.plot(unique_noise_levels, avg_mae_diff_unet, 'o-', label='UNet Model', color='purple')
+    plt.plot(unique_noise_levels, avg_mae_diff_diffusion, 'o-', label=f'Diffusion Model (Epoch {last_epoch})', color='green')
+    plt.xlabel('Noise Standard Deviation')
+    plt.ylabel('MAE in Frequency Domain')
+    plt.title('MAE in Frequency Domain Analysis')
+    plt.legend()
+    plt.grid()
+    plt.tight_layout()
+    plt.show()
+
 def evaluate_model_and_plot(epochs, diffusion_model_paths, unet_model_path, val_loader, device, include_noise_level=False, use_bm3d=False):
     if use_bm3d:
         import bm3d
@@ -165,7 +209,7 @@ def evaluate_model_and_plot(epochs, diffusion_model_paths, unet_model_path, val_
     lpips_model = lpips.LPIPS(net='alex').to(device)
     dists_model = DISTS().to(device)
 
-    metrics = {'epoch': [], 'noise_level': [], 'psnr_degraded': [], 'psnr_diffusion': [], 'psnr_unet': [], 'psnr_bm3d': [], 'ssim_degraded': [], 'ssim_diffusion': [], 'ssim_unet': [], 'ssim_bm3d': [], 'lpips_degraded': [], 'lpips_diffusion': [], 'lpips_unet': [], 'lpips_bm3d': [], 'dists_degraded': [], 'dists_diffusion': [], 'dists_unet': [], 'dists_bm3d': []}
+    metrics = {'epoch': [], 'noise_level': [], 'psnr_degraded': [], 'psnr_diffusion': [], 'psnr_unet': [], 'psnr_bm3d': [], 'ssim_degraded': [], 'ssim_diffusion': [], 'ssim_unet': [], 'ssim_bm3d': [], 'lpips_degraded': [], 'lpips_diffusion': [], 'lpips_unet': [], 'lpips_bm3d': [], 'dists_degraded': [], 'dists_diffusion': [], 'dists_unet': [], 'dists_bm3d': [], 'gt_image': [], 'predicted_unet_image': [], 'predicted_diffusion_image': []}
     example_images = {}
     aggregated_diff_map_unet = None
     aggregated_diff_map_diffusion = None
@@ -249,6 +293,9 @@ def evaluate_model_and_plot(epochs, diffusion_model_paths, unet_model_path, val_
                 metrics['dists_diffusion'].append(dists_diffusion)
                 metrics['dists_unet'].append(dists_unet)
                 metrics['dists_bm3d'].append(dists_bm3d)
+                metrics['gt_image'].append(gt_image_np)
+                metrics['predicted_unet_image'].append(predicted_unet_np)
+                metrics['predicted_diffusion_image'].append(predicted_diffusion_np)
 
                 if aggregated_diff_map_unet is None:
                     aggregated_diff_map_unet = np.abs(gt_image_np - predicted_unet_np)
@@ -276,6 +323,8 @@ def evaluate_model_and_plot(epochs, diffusion_model_paths, unet_model_path, val_
         plot_example_images({key[1]: value for key, value in example_images.items()})
     else:
         print("No example images to plot.")
+
+    frequency_domain_analysis(metrics, epochs[-1])
 
 def plot_metrics(metrics, last_epoch, use_bm3d):
     epochs = sorted(set(metrics['epoch']))
