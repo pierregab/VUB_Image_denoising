@@ -15,7 +15,7 @@ project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 sys.path.append(project_root)
 
 from dataset_creation.data_loader import load_data
-from UNet.UNet_model import UNet
+from VUB_Image_denoising.UNet.RDUNet_model import UNet
 from diffusion_denoising.diffusion_model import UNet_S_Checkpointed, DiffusionModel
 
 # Set high dpi for matplotlib

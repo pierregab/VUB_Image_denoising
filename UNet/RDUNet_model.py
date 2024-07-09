@@ -1,0 +1,251 @@
+import torch
+import torch.nn as nn
+import torch.optim as optim
+import sys
+import os
+import psutil
+import subprocess
+from torch.utils.tensorboard import SummaryWriter
+from torchvision.utils import make_grid
+import time
+
+# Assuming your script is in RCA_GAN and the project root is one level up
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+sys.path.append(project_root)
+
+from dataset_creation.data_loader import load_data
+
+# Set device
+device = torch.device("cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu")
+
+def print_memory_stats(prefix=""):
+    if torch.cuda.is_available():
+        print(f"{prefix} CUDA Memory Allocated: {torch.cuda.memory_allocated() / 1024 ** 3:.2f} GB")
+        print(f"{prefix} CUDA Memory Reserved: {torch.cuda.memory_reserved() / 1024 ** 3:.2f} GB")
+    elif torch.backends.mps.is_available():
+        memory_info = psutil.virtual_memory()
+        print(f"{prefix} System Memory Used: {memory_info.used / 1024 ** 3:.2f} GB")
+        print(f"{prefix} System Memory Available: {memory_info.available / 1024 ** 3:.2f} GB")
+
+class DownsampleBlock(nn.Module):
+    def __init__(self, in_channels, out_channels):
+        super(DownsampleBlock, self).__init__()
+        self.conv = nn.Conv2d(in_channels, out_channels, kernel_size=2, stride=2)
+        self.actv = nn.PReLU(out_channels)
+
+    def forward(self, x):
+        return self.actv(self.conv(x))
+
+class UpsampleBlock(nn.Module):
+    def __init__(self, in_channels, cat_channels, out_channels):
+        super(UpsampleBlock, self).__init__()
+        self.conv = nn.Conv2d(in_channels + cat_channels, out_channels, 3, padding=1)
+        self.conv_t = nn.ConvTranspose2d(in_channels, in_channels, 2, stride=2)
+        self.actv = nn.PReLU(out_channels)
+        self.actv_t = nn.PReLU(in_channels)
+
+    def forward(self, x):
+        upsample, concat = x
+        upsample = self.actv_t(self.conv_t(upsample))
+        return self.actv(self.conv(torch.cat([concat, upsample], 1)))
+
+class InputBlock(nn.Module):
+    def __init__(self, in_channels, out_channels):
+        super(InputBlock, self).__init__()
+        self.conv_1 = nn.Conv2d(in_channels, out_channels, 3, padding=1)
+        self.conv_2 = nn.Conv2d(out_channels, out_channels, 3, padding=1)
+        self.actv_1 = nn.PReLU(out_channels)
+        self.actv_2 = nn.PReLU(out_channels)
+
+    def forward(self, x):
+        x = self.actv_1(self.conv_1(x))
+        return self.actv_2(self.conv_2(x))
+
+class OutputBlock(nn.Module):
+    def __init__(self, in_channels, out_channels):
+        super(OutputBlock, self).__init__()
+        self.conv_1 = nn.Conv2d(in_channels, in_channels, 3, padding=1)
+        self.conv_2 = nn.Conv2d(in_channels, out_channels, 3, padding=1)
+        self.actv_1 = nn.PReLU(in_channels)
+        self.actv_2 = nn.PReLU(out_channels)
+
+    def forward(self, x):
+        x = self.actv_1(self.conv_1(x))
+        return self.actv_2(self.conv_2(x))
+
+class DenoisingBlock(nn.Module):
+    def __init__(self, in_channels, inner_channels, out_channels):
+        super(DenoisingBlock, self).__init__()
+        self.conv_0 = nn.Conv2d(in_channels, inner_channels, 3, padding=1)
+        self.conv_1 = nn.Conv2d(in_channels + inner_channels, inner_channels, 3, padding=1)
+        self.conv_2 = nn.Conv2d(in_channels + 2 * inner_channels, inner_channels, 3, padding=1)
+        self.conv_3 = nn.Conv2d(in_channels + 3 * inner_channels, out_channels, 3, padding=1)
+        self.actv_0 = nn.PReLU(inner_channels)
+        self.actv_1 = nn.PReLU(inner_channels)
+        self.actv_2 = nn.PReLU(inner_channels)
+        self.actv_3 = nn.PReLU(out_channels)
+
+    def forward(self, x):
+        out_0 = self.actv_0(self.conv_0(x))
+        out_0 = torch.cat([x, out_0], 1)
+        out_1 = self.actv_1(self.conv_1(out_0))
+        out_1 = torch.cat([out_0, out_1], 1)
+        out_2 = self.actv_2(self.conv_2(out_1))
+        out_2 = torch.cat([out_1, out_2], 1)
+        out_3 = self.actv_3(self.conv_3(out_2))
+        return out_3 + x
+
+class RDUNet(nn.Module):
+    def __init__(self, channels=3, base_filters=64):
+        super(RDUNet, self).__init__()
+        filters_0 = base_filters
+        filters_1 = 2 * filters_0
+        filters_2 = 4 * filters_0
+        filters_3 = 8 * filters_0
+
+        self.input_block = InputBlock(channels, filters_0)
+        self.block_0_0 = DenoisingBlock(filters_0, filters_0 // 2, filters_0)
+        self.block_0_1 = DenoisingBlock(filters_0, filters_0 // 2, filters_0)
+        self.down_0 = DownsampleBlock(filters_0, filters_1)
+
+        self.block_1_0 = DenoisingBlock(filters_1, filters_1 // 2, filters_1)
+        self.block_1_1 = DenoisingBlock(filters_1, filters_1 // 2, filters_1)
+        self.down_1 = DownsampleBlock(filters_1, filters_2)
+
+        self.block_2_0 = DenoisingBlock(filters_2, filters_2 // 2, filters_2)
+        self.block_2_1 = DenoisingBlock(filters_2, filters_2 // 2, filters_2)
+        self.down_2 = DownsampleBlock(filters_2, filters_3)
+
+        self.block_3_0 = DenoisingBlock(filters_3, filters_3 // 2, filters_3)
+        self.block_3_1 = DenoisingBlock(filters_3, filters_3 // 2, filters_3)
+
+        self.up_2 = UpsampleBlock(filters_3, filters_2, filters_2)
+        self.block_2_2 = DenoisingBlock(filters_2, filters_2 // 2, filters_2)
+        self.block_2_3 = DenoisingBlock(filters_2, filters_2 // 2, filters_2)
+
+        self.up_1 = UpsampleBlock(filters_2, filters_1, filters_1)
+        self.block_1_2 = DenoisingBlock(filters_1, filters_1 // 2, filters_1)
+        self.block_1_3 = DenoisingBlock(filters_1, filters_1 // 2, filters_1)
+
+        self.up_0 = UpsampleBlock(filters_1, filters_0, filters_0)
+        self.block_0_2 = DenoisingBlock(filters_0, filters_0 // 2, filters_0)
+        self.block_0_3 = DenoisingBlock(filters_0, filters_0 // 2, filters_0)
+
+        self.output_block = OutputBlock(filters_0, channels)
+
+    def forward(self, inputs):
+        out_0 = self.input_block(inputs)
+        out_0 = self.block_0_0(out_0)
+        out_0 = self.block_0_1(out_0)
+
+        out_1 = self.down_0(out_0)
+        out_1 = self.block_1_0(out_1)
+        out_1 = self.block_1_1(out_1)
+
+        out_2 = self.down_1(out_1)
+        out_2 = self.block_2_0(out_2)
+        out_2 = self.block_2_1(out_2)
+
+        out_3 = self.down_2(out_2)
+        out_3 = self.block_3_0(out_3)
+        out_3 = self.block_3_1(out_3)
+
+        out_4 = self.up_2([out_3, out_2])
+        out_4 = self.block_2_2(out_4)
+        out_4 = self.block_2_3(out_4)
+
+        out_5 = self.up_1([out_4, out_1])
+        out_5 = self.block_1_2(out_5)
+        out_5 = self.block_1_3(out_5)
+
+        out_6 = self.up_0([out_5, out_0])
+        out_6 = self.block_0_2(out_6)
+        out_6 = self.block_0_3(out_6)
+
+        return self.output_block(out_6) + inputs
+
+def charbonnier_loss(pred, target, epsilon=1e-3):
+    return torch.mean(torch.sqrt((pred - target) ** 2 + epsilon ** 2))
+
+# Define the model and optimizer
+unet = RDUNet().to(device)
+optimizer = optim.Adam(unet.parameters(), lr=2e-4, betas=(0.9, 0.999))
+
+def denormalize(tensor):
+    return tensor * 0.5 + 0.5
+
+# Sample training loop
+def train_step(model, clean_images, noisy_images, optimizer):
+    model.train()
+    optimizer.zero_grad()
+    
+    clean_images, noisy_images = clean_images.to(device), noisy_images.to(device)
+    
+    denoised_images = model(noisy_images)
+    loss = charbonnier_loss(denoised_images, clean_images)
+    loss.backward()
+    optimizer.step()
+    
+    return loss.item()
+
+def train_model(model, train_loader, optimizer, writer, num_epochs=10):
+    for epoch in range(num_epochs):
+        for batch_idx, (noisy_images, clean_images) in enumerate(train_loader):
+            loss = train_step(model, clean_images, noisy_images, optimizer)
+            print(f"Epoch [{epoch + 1}/{num_epochs}], Batch [{batch_idx + 1}/{len(train_loader)}], Loss: {loss:.4f}")
+            
+            writer.add_scalar('Loss/train', loss, epoch * len(train_loader) + batch_idx)
+        
+        model.eval()
+        with torch.no_grad():
+            for batch_idx, (noisy_images, clean_images) in enumerate(train_loader):
+                clean_images, noisy_images = clean_images.to(device), noisy_images.to(device)
+                denoised_images = model(noisy_images)
+                
+                clean_images = denormalize(clean_images.cpu())
+                noisy_images = denormalize(noisy_images.cpu())
+                denoised_images = denormalize(denoised_images.cpu())
+                
+                grid_clean = make_grid(clean_images, nrow=4, normalize=True)
+                grid_noisy = make_grid(noisy_images, nrow=4, normalize=True)
+                grid_denoised = make_grid(denoised_images, nrow=4, normalize=True)
+                
+                writer.add_image(f'Epoch_{epoch + 1}/Clean Images', grid_clean, epoch + 1)
+                writer.add_image(f'Epoch_{epoch + 1}/Noisy Images', grid_noisy, epoch + 1)
+                writer.add_image(f'Epoch_{epoch + 1}/Denoised Images', grid_denoised, epoch + 1)
+             
+                if batch_idx >= 0:  # Change this if you want more batches
+                    break
+        
+        writer.flush()
+
+    # Save the model checkpoint
+    checkpoint_path = os.path.join("checkpoints", "unet_denoising.pth")
+    os.makedirs(os.path.dirname(checkpoint_path), exist_ok=True)
+    torch.save({
+        'model_state_dict': model.state_dict(),
+        'optimizer_state_dict': optimizer.state_dict()
+    }, checkpoint_path)
+    print(f"Model checkpoint saved at {checkpoint_path}")
+
+def start_tensorboard(log_dir):
+    try:
+        subprocess.Popen(['tensorboard', '--logdir', log_dir])
+        print(f"TensorBoard started at http://localhost:6006")
+    except Exception as e:
+        print(f"Failed to start TensorBoard: {e}")
+
+if __name__ == "__main__":
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+    if torch.backends.mps.is_available():
+        torch.mps.empty_cache()
+
+    log_dir = os.path.join("runs", "unet_denoising")
+    writer = SummaryWriter(log_dir=log_dir)
+    start_tensorboard(log_dir)
+    
+    image_folder = 'DIV2K_train_HR.nosync'
+    train_loader, val_loader = load_data(image_folder, batch_size=8, augment=False, dataset_percentage=0.1, use_rgb=True)
+    train_model(unet, train_loader, optimizer, writer, num_epochs=20)
+    writer.close()

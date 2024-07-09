@@ -16,7 +16,7 @@ sys.path.append(project_root)
 
 # Import required methods
 from dataset_creation.data_loader import load_data
-from UNet.UNet_model import UNet
+from VUB_Image_denoising.UNet.RDUNet_model import UNet
 from diffusion_denoising.diffusion_model import UNet_S_Checkpointed, DiffusionModel
 
 # Set device
