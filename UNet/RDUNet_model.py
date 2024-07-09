@@ -241,7 +241,7 @@ if __name__ == "__main__":
     if torch.backends.mps.is_available():
         torch.mps.empty_cache()
 
-    log_dir = os.path.join("runs", "unet_denoising")
+    log_dir = os.path.join("runs", "rdunet_denoising")
     writer = SummaryWriter(log_dir=log_dir)
     start_tensorboard(log_dir)
     
