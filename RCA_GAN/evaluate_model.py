@@ -8,7 +8,7 @@ import os
 import sys
 from tqdm import tqdm
 import lpips
-from DISTS_pytorch import DISTS  # Import DISTS
+from DISTS_pytorch import DISTS
 from scipy.signal import welch
 
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
@@ -207,6 +207,53 @@ def save_frequency_domain_analysis(metrics, last_epoch, save_dir):
     plt.savefig(os.path.join(save_dir, 'frequency_domain_analysis.png'))
     plt.close()
 
+def plot_psd_comparison(metrics, last_epoch, save_dir):
+    epochs = sorted(set(metrics['epoch']))
+    noise_levels = np.array(metrics['noise_level'])
+    unique_noise_levels = sorted(np.unique(noise_levels))
+
+    for nl in unique_noise_levels:
+        idx = (noise_levels == nl) & (np.array(metrics['epoch']) == last_epoch)
+        
+        psd_gt_all = []
+        psd_unet_all = []
+        psd_diffusion_all = []
+        
+        for gt_image, predicted_unet_image, predicted_diffusion_image in zip(
+            np.array(metrics['gt_image'])[idx],
+            np.array(metrics['predicted_unet_image'])[idx],
+            np.array(metrics['predicted_diffusion_image'])[idx]
+        ):
+            gt_image = gt_image.squeeze()
+            predicted_unet_image = predicted_unet_image.squeeze()
+            predicted_diffusion_image = predicted_diffusion_image.squeeze()
+
+            f_gt, Pxx_gt = welch(gt_image.flatten(), nperseg=256)
+            _, Pxx_unet = welch(predicted_unet_image.flatten(), nperseg=256)
+            _, Pxx_diffusion = welch(predicted_diffusion_image.flatten(), nperseg=256)
+
+            psd_gt_all.append(Pxx_gt)
+            psd_unet_all.append(Pxx_unet)
+            psd_diffusion_all.append(Pxx_diffusion)
+        
+        avg_psd_gt = np.mean(psd_gt_all, axis=0)
+        avg_psd_unet = np.mean(psd_unet_all, axis=0)
+        avg_psd_diffusion = np.mean(psd_diffusion_all, axis=0)
+
+        plt.figure(figsize=(10, 6))
+        plt.plot(f_gt, avg_psd_gt, label='Ground Truth', color='black')
+        plt.plot(f_gt, avg_psd_unet, label='UNet Model', color='purple')
+        plt.plot(f_gt, avg_psd_diffusion, label=f'Diffusion Model (Epoch {last_epoch})', color='green')
+        plt.xlabel('Frequency')
+        plt.ylabel('Power Spectral Density (Log Scale)')
+        plt.yscale('log')
+        plt.title(f'Average PSD Comparison at Noise Level {nl}')
+        plt.legend()
+        plt.grid(True, which="both", ls="--")
+        plt.tight_layout()
+        plt.savefig(os.path.join(save_dir, f'psd_comparison_noise_level_{nl}.png'))
+        plt.close()
+
 def evaluate_model_and_plot(epochs, diffusion_model_paths, unet_model_path, val_loader, device, include_noise_level=False, use_bm3d=False, save_dir='results', studies=None):
     if use_bm3d:
         import bm3d
@@ -334,6 +381,9 @@ def evaluate_model_and_plot(epochs, diffusion_model_paths, unet_model_path, val_
         save_heatmaps(aggregated_diff_map_unet, aggregated_diff_map_diffusion, save_dir)
     if studies is None or 'frequency_domain_analysis' in studies:
         save_frequency_domain_analysis(metrics, epochs[-1], save_dir)
+    
+    # Call the PSD comparison plotting
+    plot_psd_comparison(metrics, epochs[-1], save_dir)
 
 def save_metrics(metrics, last_epoch, use_bm3d, save_dir):
     epochs = sorted(set(metrics['epoch']))
