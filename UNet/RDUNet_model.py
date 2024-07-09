@@ -224,15 +224,17 @@ def train_model(model, train_loader, optimizer, scheduler, writer, num_epochs=10
         
         writer.flush()
         scheduler.step()  # Update the learning rate
+
+        if (epoch + 1) % 5 == 0:
     
-    # Save the model checkpoint
-    checkpoint_path = os.path.join("checkpoints", "unet_denoising.pth")
-    os.makedirs(os.path.dirname(checkpoint_path), exist_ok=True)
-    torch.save({
-        'model_state_dict': model.state_dict(),
-        'optimizer_state_dict': optimizer.state_dict()
-    }, checkpoint_path)
-    print(f"Model checkpoint saved at {checkpoint_path}")
+            # Save the model checkpoint
+            checkpoint_path = os.path.join("checkpoints", "rdunet_denoising.pth")
+            os.makedirs(os.path.dirname(checkpoint_path), exist_ok=True)
+            torch.save({
+                'model_state_dict': model.state_dict(),
+                'optimizer_state_dict': optimizer.state_dict()
+            }, checkpoint_path)
+            print(f"Model checkpoint saved at {checkpoint_path}")
 
 def start_tensorboard(log_dir):
     try:
