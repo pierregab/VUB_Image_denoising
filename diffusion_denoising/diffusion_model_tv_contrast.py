@@ -191,10 +191,10 @@ def combined_loss(pred, target):
     dynamic_range_loss_term = dynamic_range_loss(pred, target)
     grad_dist_loss = gradient_distribution_loss(pred, target)
     
-    combined = (0.3 * mse_loss + 0.3 * ssim_loss + 1 * tv_loss + 0.1 * perc_loss +
-                0.1 * hist_match_loss + 0.1 * contrast_diff_loss + 
-                0.1 * local_contrast_loss_term + 0.1 * dynamic_range_loss_term +
-                0.1 * grad_dist_loss)
+    combined = (1e2 * mse_loss + 1e3 * ssim_loss + 1 * tv_loss + 0.1 * perc_loss +
+                1e4 * hist_match_loss + 1e1 * contrast_diff_loss + 
+                0.1 * local_contrast_loss_term + 1e2 * dynamic_range_loss_term +
+                1e9 * grad_dist_loss)
     
     return combined, mse_loss, ssim_loss, tv_loss, perc_loss, hist_match_loss, contrast_diff_loss, local_contrast_loss_term, dynamic_range_loss_term, grad_dist_loss
 

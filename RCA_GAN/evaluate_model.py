@@ -210,6 +210,53 @@ def save_frequency_domain_analysis(metrics, last_epoch, save_dir):
     plt.savefig(os.path.join(save_dir, 'frequency_domain_analysis.png'))
     plt.close()
 
+def save_frequency_domain_analysis_multiple_epochs(metrics, epochs, save_dir):
+    noise_levels = np.array(metrics['noise_level'])
+    unique_noise_levels = sorted(np.unique(noise_levels))
+
+    avg_mae_diff_unet = []
+    avg_mae_diff_diffusion = {epoch: [] for epoch in epochs}
+
+    for nl in unique_noise_levels:
+        idx = (noise_levels == nl)
+        mae_diff_unet = []
+        mae_diff_diffusion = {epoch: [] for epoch in epochs}
+
+        for gt_image, predicted_unet_image, epoch, predicted_diffusion_image in zip(
+            np.array(metrics['gt_image'])[idx],
+            np.array(metrics['predicted_unet_image'])[idx],
+            np.array(metrics['epoch'])[idx],
+            np.array(metrics['predicted_diffusion_image'])[idx]
+        ):
+            gt_image = gt_image.squeeze()
+            predicted_unet_image = predicted_unet_image.squeeze()
+            predicted_diffusion_image = predicted_diffusion_image.squeeze()
+
+            f, Pxx_gt = welch(gt_image.flatten(), nperseg=256)
+            _, Pxx_unet = welch(predicted_unet_image.flatten(), nperseg=256)
+            _, Pxx_diffusion = welch(predicted_diffusion_image.flatten(), nperseg=256)
+
+            mae_diff_unet.append(np.mean(np.abs(Pxx_gt - Pxx_unet)))
+            mae_diff_diffusion[epoch].append(np.mean(np.abs(Pxx_gt - Pxx_diffusion)))
+
+        avg_mae_diff_unet.append(np.mean(mae_diff_unet))
+        for epoch in epochs:
+            avg_mae_diff_diffusion[epoch].append(np.mean(mae_diff_diffusion[epoch]))
+
+    plt.figure(figsize=(10, 6))
+    plt.plot(unique_noise_levels, avg_mae_diff_unet, 'o-', label='UNet Model', color='purple')
+    colors = ['green', 'blue', 'orange', 'red', 'black', 'brown', 'pink', 'gray', 'cyan', 'magenta']
+    for idx, epoch in enumerate(epochs):
+        plt.plot(unique_noise_levels, avg_mae_diff_diffusion[epoch], 'o-', label=f'Diffusion Model (Epoch {epoch})', color=colors[idx % len(colors)])
+    plt.xlabel('Noise Standard Deviation')
+    plt.ylabel('MAE in Frequency Domain')
+    plt.title('MAE in Frequency Domain Analysis')
+    plt.legend()
+    plt.grid()
+    plt.tight_layout()
+    plt.savefig(os.path.join(save_dir, 'frequency_domain_analysis_multiple_epochs.png'))
+    plt.close()
+
 def plot_psd_comparison(metrics, last_epoch, save_dir):
     epochs = sorted(set(metrics['epoch']))
     noise_levels = np.array(metrics['noise_level'])
@@ -392,6 +439,8 @@ def evaluate_model_and_plot(epochs, diffusion_model_paths, unet_model_path, val_
         save_heatmaps(aggregated_diff_map_unet, aggregated_diff_map_diffusion, save_dir)
     if studies is None or 'frequency_domain_analysis' in studies:
         save_frequency_domain_analysis(metrics, epochs[-1], save_dir)
+    if len(epochs) > 1:
+        save_frequency_domain_analysis_multiple_epochs(metrics, epochs, save_dir)
     
     # Call the PSD comparison plotting
     plot_psd_comparison(metrics, epochs[-1], save_dir)
@@ -546,3 +595,4 @@ if __name__ == "__main__":
     save_directory = 'evaluation_results'
 
     evaluate_model_and_plot(epochs_to_evaluate, diffusion_model_paths, unet_model_path, val_loader=val_loader, device=device, include_noise_level=True, use_bm3d=False, save_dir=save_directory, studies=selected_studies)
+
