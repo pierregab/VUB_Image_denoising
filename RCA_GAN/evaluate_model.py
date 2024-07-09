@@ -18,6 +18,9 @@ from dataset_creation.data_loader import load_data
 from UNet.UNet_model import UNet
 from diffusion_denoising.diffusion_model import UNet_S_Checkpointed, DiffusionModel
 
+# Set high dpi for matplotlib
+plt.rcParams['figure.dpi'] = 300
+
 def denormalize(tensor, mean=0.5, std=0.5):
     return tensor * std + mean
 
@@ -218,30 +221,37 @@ def plot_psd_comparison(metrics, last_epoch, save_dir):
         psd_gt_all = []
         psd_unet_all = []
         psd_diffusion_all = []
+        psd_degraded_all = []
         
-        for gt_image, predicted_unet_image, predicted_diffusion_image in zip(
+        for gt_image, degraded_image, predicted_unet_image, predicted_diffusion_image in zip(
             np.array(metrics['gt_image'])[idx],
+            np.array(metrics['degraded_image'])[idx],
             np.array(metrics['predicted_unet_image'])[idx],
             np.array(metrics['predicted_diffusion_image'])[idx]
         ):
             gt_image = gt_image.squeeze()
+            degraded_image = degraded_image.squeeze()
             predicted_unet_image = predicted_unet_image.squeeze()
             predicted_diffusion_image = predicted_diffusion_image.squeeze()
 
             f_gt, Pxx_gt = welch(gt_image.flatten(), nperseg=256)
+            _, Pxx_degraded = welch(degraded_image.flatten(), nperseg=256)
             _, Pxx_unet = welch(predicted_unet_image.flatten(), nperseg=256)
             _, Pxx_diffusion = welch(predicted_diffusion_image.flatten(), nperseg=256)
 
             psd_gt_all.append(Pxx_gt)
+            psd_degraded_all.append(Pxx_degraded)
             psd_unet_all.append(Pxx_unet)
             psd_diffusion_all.append(Pxx_diffusion)
         
         avg_psd_gt = np.mean(psd_gt_all, axis=0)
+        avg_psd_degraded = np.mean(psd_degraded_all, axis=0)
         avg_psd_unet = np.mean(psd_unet_all, axis=0)
         avg_psd_diffusion = np.mean(psd_diffusion_all, axis=0)
 
         plt.figure(figsize=(10, 6))
         plt.plot(f_gt, avg_psd_gt, label='Ground Truth', color='black')
+        plt.plot(f_gt, avg_psd_degraded, label='Degraded', color='red')
         plt.plot(f_gt, avg_psd_unet, label='UNet Model', color='purple')
         plt.plot(f_gt, avg_psd_diffusion, label=f'Diffusion Model (Epoch {last_epoch})', color='green')
         plt.xlabel('Frequency')
@@ -263,7 +273,7 @@ def evaluate_model_and_plot(epochs, diffusion_model_paths, unet_model_path, val_
     lpips_model = lpips.LPIPS(net='alex').to(device)
     dists_model = DISTS().to(device)
 
-    metrics = {'epoch': [], 'noise_level': [], 'psnr_degraded': [], 'psnr_diffusion': [], 'psnr_unet': [], 'psnr_bm3d': [], 'ssim_degraded': [], 'ssim_diffusion': [], 'ssim_unet': [], 'ssim_bm3d': [], 'lpips_degraded': [], 'lpips_diffusion': [], 'lpips_unet': [], 'lpips_bm3d': [], 'dists_degraded': [], 'dists_diffusion': [], 'dists_unet': [], 'dists_bm3d': [], 'gt_image': [], 'predicted_unet_image': [], 'predicted_diffusion_image': []}
+    metrics = {'epoch': [], 'noise_level': [], 'psnr_degraded': [], 'psnr_diffusion': [], 'psnr_unet': [], 'psnr_bm3d': [], 'ssim_degraded': [], 'ssim_diffusion': [], 'ssim_unet': [], 'ssim_bm3d': [], 'lpips_degraded': [], 'lpips_diffusion': [], 'lpips_unet': [], 'lpips_bm3d': [], 'dists_degraded': [], 'dists_diffusion': [], 'dists_unet': [], 'dists_bm3d': [], 'gt_image': [], 'degraded_image': [], 'predicted_unet_image': [], 'predicted_diffusion_image': []}
     example_images = {}
     aggregated_diff_map_unet = None
     aggregated_diff_map_diffusion = None
@@ -348,6 +358,7 @@ def evaluate_model_and_plot(epochs, diffusion_model_paths, unet_model_path, val_
                 metrics['dists_unet'].append(dists_unet)
                 metrics['dists_bm3d'].append(dists_bm3d)
                 metrics['gt_image'].append(gt_image_np)
+                metrics['degraded_image'].append(degraded_np)
                 metrics['predicted_unet_image'].append(predicted_unet_np)
                 metrics['predicted_diffusion_image'].append(predicted_diffusion_np)
 
@@ -527,7 +538,7 @@ if __name__ == "__main__":
 
     train_loader, val_loader = load_data(image_folder, batch_size=1, num_workers=8, validation_split=0.5, augment=False, dataset_percentage=0.01, only_validation=False, include_noise_level=True, train_noise_levels=train_noise_levels, val_noise_levels=val_noise_levels, use_rgb=True)
 
-    epochs_to_evaluate = [200]
+    epochs_to_evaluate = [100, 200]
     diffusion_model_paths = [f"checkpoints/diffusion_model_checkpointed_epoch_{epoch}.pth" for epoch in epochs_to_evaluate]
     unet_model_path = "checkpoints/unet_denoising.pth"
 
