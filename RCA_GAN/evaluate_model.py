@@ -15,7 +15,7 @@ project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 sys.path.append(project_root)
 
 from dataset_creation.data_loader import load_data
-from VUB_Image_denoising.UNet.RDUNet_model import UNet
+from VUB_Image_denoising.UNet.RDUNet_model import RDUNet
 from diffusion_denoising.diffusion_model import UNet_S_Checkpointed, DiffusionModel
 
 # Set high dpi for matplotlib
@@ -326,7 +326,7 @@ def evaluate_model_and_plot(epochs, diffusion_model_paths, unet_model_path, val_
     aggregated_diff_map_diffusion = None
     count = 0
 
-    unet_model = UNet().to(device)
+    unet_model = RDUNet().to(device)  # Updated to use RDUNet
     unet_checkpoint = torch.load(unet_model_path, map_location=device)
     if 'model_state_dict' in unet_checkpoint:
         unet_model.load_state_dict(unet_checkpoint['model_state_dict'])
@@ -595,4 +595,3 @@ if __name__ == "__main__":
     save_directory = 'evaluation_results'
 
     evaluate_model_and_plot(epochs_to_evaluate, diffusion_model_paths, unet_model_path, val_loader=val_loader, device=device, include_noise_level=True, use_bm3d=False, save_dir=save_directory, studies=selected_studies)
-
