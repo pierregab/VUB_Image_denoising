@@ -164,15 +164,12 @@ class RDUNet(nn.Module):
 
         return self.output_block(out_6) + inputs
 
-def charbonnier_loss(pred, target, epsilon=1e-3):
-    return torch.mean(torch.sqrt((pred - target) ** 2 + epsilon ** 2))
-
 # Define the model and optimizer
-unet = RDUNet(base_filters=128).to(device)  # Adjusting base filters to 128 as per the paper
+unet = RDUNet(base_filters=64).to(device)  # Using base filters 64 as per the paper
 optimizer = optim.AdamW(unet.parameters(), lr=1e-4, weight_decay=1e-5)  # Adjusting optimizer parameters
 
 # Scheduler
-scheduler_step = 3  # Number of epochs before each scheduler step
+scheduler_step = 50  # Number of epochs before each scheduler step as per the paper
 scheduler_gamma = 0.5  # Decay factor
 scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=scheduler_step, gamma=scheduler_gamma)
 
@@ -180,23 +177,25 @@ def denormalize(tensor):
     return tensor * 0.5 + 0.5
 
 # Sample training loop
-def train_step(model, clean_images, noisy_images, optimizer):
+def train_step(model, clean_images, noisy_images, optimizer, criterion):
     model.train()
     optimizer.zero_grad()
     
     clean_images, noisy_images = clean_images.to(device), noisy_images.to(device)
     
     denoised_images = model(noisy_images)
-    loss = charbonnier_loss(denoised_images, clean_images)
+    loss = criterion(denoised_images, clean_images)
     loss.backward()
     optimizer.step()
     
     return loss.item()
 
 def train_model(model, train_loader, optimizer, scheduler, writer, num_epochs=10):
+    criterion = nn.L1Loss()
+    
     for epoch in range(num_epochs):
         for batch_idx, (noisy_images, clean_images) in enumerate(train_loader):
-            loss = train_step(model, clean_images, noisy_images, optimizer)
+            loss = train_step(model, clean_images, noisy_images, optimizer, criterion)
             print(f"Epoch [{epoch + 1}/{num_epochs}], Batch [{batch_idx + 1}/{len(train_loader)}], Loss: {loss:.4f}")
             
             writer.add_scalar('Loss/train', loss, epoch * len(train_loader) + batch_idx)
@@ -254,6 +253,6 @@ if __name__ == "__main__":
     start_tensorboard(log_dir)
     
     image_folder = 'DIV2K_train_HR.nosync'
-    train_loader, val_loader = load_data(image_folder, batch_size=16, augment=False, dataset_percentage=0.1, use_rgb=True)  # Adjusting batch size
+    train_loader, val_loader = load_data(image_folder, batch_size=4, augment=False, dataset_percentage=0.1, use_rgb=True, num_workers=10)  # Adjusting batch size
     train_model(unet, train_loader, optimizer, scheduler, writer, num_epochs=21)  # Adjusting number of epochs
     writer.close()
