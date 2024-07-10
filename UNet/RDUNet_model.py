@@ -197,27 +197,30 @@ scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=scheduler_step, gamma
 def denormalize(tensor):
     return tensor * 0.5 + 0.5
 
-# Sample training loop
-def train_step(model, clean_images, noisy_images, optimizer, criterion):
+# Sample training loop with gradient accumulation
+def train_step(model, clean_images, noisy_images, optimizer, criterion, batch_idx, accumulation_steps):
     model.train()
-    optimizer.zero_grad()
     
     clean_images, noisy_images = clean_images.to(device), noisy_images.to(device)
     
     denoised_images = model(noisy_images)
     loss = criterion(denoised_images, clean_images)
     loss.backward()
-    nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)  # Add gradient clipping here
-    optimizer.step()
+    
+    if (batch_idx + 1) % accumulation_steps == 0:
+        nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)  # Add gradient clipping here
+        optimizer.step()
+        optimizer.zero_grad()
     
     return loss.item()
 
-def train_model(model, train_loader, optimizer, scheduler, writer, num_epochs=10):
+def train_model(model, train_loader, optimizer, scheduler, writer, num_epochs=10, accumulation_steps=4):
     criterion = nn.L1Loss()
     
     for epoch in range(num_epochs):
+        optimizer.zero_grad()
         for batch_idx, (noisy_images, clean_images) in enumerate(train_loader):
-            loss = train_step(model, clean_images, noisy_images, optimizer, criterion)
+            loss = train_step(model, clean_images, noisy_images, optimizer, criterion, batch_idx, accumulation_steps)
             print(f"Epoch [{epoch + 1}/{num_epochs}], Batch [{batch_idx + 1}/{len(train_loader)}], Loss: {loss:.4f}")
             
             writer.add_scalar('Loss/train', loss, epoch * len(train_loader) + batch_idx)
@@ -276,5 +279,5 @@ if __name__ == "__main__":
     
     image_folder = 'DIV2K_train_HR.nosync'
     train_loader, val_loader = load_data(image_folder, batch_size=4, augment=False, dataset_percentage=0.1, use_rgb=True, num_workers=10)  # Adjusting batch size
-    train_model(unet, train_loader, optimizer, scheduler, writer, num_epochs=21)  # Adjusting number of epochs
+    train_model(unet, train_loader, optimizer, scheduler, writer, num_epochs=21, accumulation_steps=4)  # Adjusting number of epochs
     writer.close()
