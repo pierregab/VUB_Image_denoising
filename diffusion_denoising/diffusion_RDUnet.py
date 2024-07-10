@@ -234,7 +234,7 @@ def denormalize(tensor):
     return tensor * 0.5 + 0.5
 
 # Sample training loop
-def train_step_checkpointed(model, clean_images, noisy_images, optimizer):
+def train_step_checkpointed(model, clean_images, noisy_images, optimizer, accumulation_steps, clip_value=1.0):
     model.train()
     optimizer.zero_grad()
     
@@ -266,19 +266,26 @@ def train_step_checkpointed(model, clean_images, noisy_images, optimizer):
     # Calculate the combined loss
     loss = combined_loss(denoised_images, clean_images.to(device))
     loss.backward()
-    optimizer.step()
-
+    
+    # Clip the gradients
+    torch.nn.utils.clip_grad_norm_(model.parameters(), clip_value)
+    
     return loss.item()
 
-def train_model_checkpointed(model, train_loader, val_loader, optimizer, scheduler, writer, num_epochs=10, start_epoch=0):
+def train_model_checkpointed(model, train_loader, val_loader, optimizer, scheduler, writer, num_epochs=10, start_epoch=0, accumulation_steps=4, clip_value=1.0):
     for epoch in range(start_epoch, num_epochs):
         # Training phase
         model.train()
+        optimizer.zero_grad()
         for batch_idx, (noisy_images, clean_images) in enumerate(train_loader):
             noisy_images, clean_images = noisy_images.to(device), clean_images.to(device)
-            loss = train_step_checkpointed(model, clean_images, noisy_images, optimizer)
-            print(f"Epoch [{epoch + 1}/{num_epochs}], Batch [{batch_idx + 1}/{len(train_loader)}], Loss: {loss:.4f}")
+            loss = train_step_checkpointed(model, clean_images, noisy_images, optimizer, accumulation_steps, clip_value)
             
+            if (batch_idx + 1) % accumulation_steps == 0:
+                optimizer.step()
+                optimizer.zero_grad()
+
+            print(f"Epoch [{epoch + 1}/{num_epochs}], Batch [{batch_idx + 1}/{len(train_loader)}], Loss: {loss:.4f}")
             writer.add_scalar('Loss/train', loss, epoch * len(train_loader) + batch_idx)
         
         # Validation phase (on a single batch)
@@ -327,6 +334,7 @@ def train_model_checkpointed(model, train_loader, val_loader, optimizer, schedul
             'scheduler_state_dict': scheduler.state_dict()
         }, checkpoint_path)
         print(f"Model checkpoint saved at {checkpoint_path}")
+
 
 def load_checkpoint(model, optimizer, scheduler, checkpoint_path):
     if os.path.isfile(checkpoint_path):
