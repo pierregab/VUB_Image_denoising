@@ -165,11 +165,11 @@ class RDUNet(nn.Module):
         return self.output_block(out_6) + inputs
 
 # Define the model and optimizer
-unet = RDUNet(base_filters=64).to(device)  # Using base filters 64 as per the paper
+unet = RDUNet(base_filters=128).to(device)  # Using base filters 128 as per the paper
 optimizer = optim.AdamW(unet.parameters(), lr=1e-4, weight_decay=1e-5)  # Adjusting optimizer parameters
 
 # Scheduler
-scheduler_step = 50  # Number of epochs before each scheduler step as per the paper
+scheduler_step = 3  # Number of epochs before each scheduler step as per the paper
 scheduler_gamma = 0.5  # Decay factor
 scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=scheduler_step, gamma=scheduler_gamma)
 

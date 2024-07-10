@@ -15,7 +15,7 @@ project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 sys.path.append(project_root)
 
 from dataset_creation.data_loader import load_data
-from VUB_Image_denoising.UNet.RDUNet_model import RDUNet
+from UNet.RDUNet_model import RDUNet
 from diffusion_denoising.diffusion_model import UNet_S_Checkpointed, DiffusionModel
 
 # Set high dpi for matplotlib
@@ -84,25 +84,32 @@ def save_example_images(example_images, save_dir):
     for i, (sigma, images) in enumerate(filtered_images.items()):
         gt_image, degraded_image, predicted_unet_image, predicted_diffusion_image = images
 
-        axs[i, 0].imshow(np.transpose(gt_image, (1, 2, 0)))
+        # Ensure all images are in the shape (H, W, C) and in the range [0, 1]
+        gt_image = np.transpose(gt_image, (1, 2, 0))
+        degraded_image = np.transpose(degraded_image, (1, 2, 0))
+        predicted_unet_image = np.transpose(predicted_unet_image, (1, 2, 0))
+        predicted_diffusion_image = np.transpose(predicted_diffusion_image, (1, 2, 0))
+
+        axs[i, 0].imshow(gt_image)
         axs[i, 0].set_title(f'Ground Truth (Sigma: {sigma})')
         axs[i, 0].axis('off')
 
-        axs[i, 1].imshow(np.transpose(degraded_image, (1, 2, 0)))
+        axs[i, 1].imshow(degraded_image)
         axs[i, 1].set_title('Noisy')
         axs[i, 1].axis('off')
 
-        axs[i, 2].imshow(predicted_unet_image, cmap='gray')
+        axs[i, 2].imshow(predicted_unet_image)
         axs[i, 2].set_title('Denoised (UNet)')
         axs[i, 2].axis('off')
 
-        axs[i, 3].imshow(np.transpose(predicted_diffusion_image, (1, 2, 0)))
+        axs[i, 3].imshow(predicted_diffusion_image)
         axs[i, 3].set_title('Denoised (Diffusion)')
         axs[i, 3].axis('off')
 
     plt.tight_layout()
     plt.savefig(os.path.join(save_dir, 'example_images.png'))
     plt.close()
+
 
 def save_error_map(gt_image, predicted_image, save_dir):
     error_map = np.abs(gt_image - predicted_image)
@@ -170,7 +177,6 @@ def save_frequency_domain_analysis(metrics, last_epoch, save_dir):
     epochs = sorted(set(metrics['epoch']))
     noise_levels = np.array(metrics['noise_level'])
     unique_noise_levels = sorted(np.unique(noise_levels))
-
     avg_mae_diff_unet = []
     avg_mae_diff_diffusion = []
 
@@ -192,8 +198,13 @@ def save_frequency_domain_analysis(metrics, last_epoch, save_dir):
             _, Pxx_unet = welch(predicted_unet_image.flatten(), nperseg=256)
             _, Pxx_diffusion = welch(predicted_diffusion_image.flatten(), nperseg=256)
 
-            mae_diff_unet.append(np.mean(np.abs(Pxx_gt - Pxx_unet)))
-            mae_diff_diffusion.append(np.mean(np.abs(Pxx_gt - Pxx_diffusion)))
+            # Normalize the power spectral densities
+            Pxx_gt_norm = Pxx_gt / np.sum(Pxx_gt)
+            Pxx_unet_norm = Pxx_unet / np.sum(Pxx_unet)
+            Pxx_diffusion_norm = Pxx_diffusion / np.sum(Pxx_diffusion)
+
+            mae_diff_unet.append(np.mean(np.abs(Pxx_gt_norm - Pxx_unet_norm)))
+            mae_diff_diffusion.append(np.mean(np.abs(Pxx_gt_norm - Pxx_diffusion_norm)))
 
         avg_mae_diff_unet.append(np.mean(mae_diff_unet))
         avg_mae_diff_diffusion.append(np.mean(mae_diff_diffusion))
@@ -202,12 +213,12 @@ def save_frequency_domain_analysis(metrics, last_epoch, save_dir):
     plt.plot(unique_noise_levels, avg_mae_diff_unet, 'o-', label='UNet Model', color='purple')
     plt.plot(unique_noise_levels, avg_mae_diff_diffusion, 'o-', label=f'Diffusion Model (Epoch {last_epoch})', color='green')
     plt.xlabel('Noise Standard Deviation')
-    plt.ylabel('MAE in Frequency Domain')
-    plt.title('MAE in Frequency Domain Analysis')
+    plt.ylabel('Normalized MAE in Frequency Domain')
+    plt.title('Normalized MAE in Frequency Domain Analysis')
     plt.legend()
     plt.grid()
     plt.tight_layout()
-    plt.savefig(os.path.join(save_dir, 'frequency_domain_analysis.png'))
+    plt.savefig(os.path.join(save_dir, 'normalized_frequency_domain_analysis.png'))
     plt.close()
 
 def save_frequency_domain_analysis_multiple_epochs(metrics, epochs, save_dir):
@@ -361,12 +372,12 @@ def evaluate_model_and_plot(epochs, diffusion_model_paths, unet_model_path, val_
                 degraded_image_1 = degraded_image.mean(dim=1, keepdim=True)
                 gt_image_1 = gt_image.mean(dim=1, keepdim=True)
 
-                predicted_unet = unet_model(degraded_image_1)
+                predicted_unet = unet_model(degraded_image)
 
             for j in range(degraded_image.size(0)):
                 psnr_degraded, ssim_degraded, lpips_degraded, dists_degraded = compute_metrics(gt_image[j], degraded_image[j], lpips_model, dists_model, use_rgb=True)
                 psnr_diffusion, ssim_diffusion, lpips_diffusion, dists_diffusion = compute_metrics(gt_image[j], predicted_diffusion[j], lpips_model, dists_model, use_rgb=True)
-                psnr_unet, ssim_unet, lpips_unet, dists_unet = compute_metrics(gt_image_1[j], predicted_unet[j], lpips_model, dists_model)
+                psnr_unet, ssim_unet, lpips_unet, dists_unet = compute_metrics(gt_image[j], predicted_unet[j], lpips_model, dists_model)
 
                 degraded_np = denormalize(degraded_image[j].cpu().numpy().squeeze())
                 gt_image_np = denormalize(gt_image[j].cpu().numpy().squeeze())
@@ -587,9 +598,9 @@ if __name__ == "__main__":
 
     train_loader, val_loader = load_data(image_folder, batch_size=1, num_workers=8, validation_split=0.5, augment=False, dataset_percentage=0.01, only_validation=False, include_noise_level=True, train_noise_levels=train_noise_levels, val_noise_levels=val_noise_levels, use_rgb=True)
 
-    epochs_to_evaluate = [100, 200]
+    epochs_to_evaluate = [200]
     diffusion_model_paths = [f"checkpoints/diffusion_model_checkpointed_epoch_{epoch}.pth" for epoch in epochs_to_evaluate]
-    unet_model_path = "checkpoints/unet_denoising.pth"
+    unet_model_path = "checkpoints/rdunet_denoising.pth"
 
     selected_studies = ['metrics', 'dists', 'example_images', 'histograms_of_differences', 'heatmaps', 'frequency_domain_analysis']
     save_directory = 'evaluation_results'
