@@ -27,6 +27,25 @@ def print_memory_stats(prefix=""):
         print(f"{prefix} System Memory Used: {memory_info.used / 1024 ** 3:.2f} GB")
         print(f"{prefix} System Memory Available: {memory_info.available / 1024 ** 3:.2f} GB")
 
+@torch.no_grad()
+def init_weights(init_type='xavier'):
+    if init_type == 'xavier':
+        init = nn.init.xavier_normal_
+    elif init_type == 'he':
+        init = nn.init.kaiming_normal_
+    else:
+        init = nn.init.orthogonal_
+
+    def initializer(m):
+        classname = m.__class__.__name__
+        if classname.find('Conv2d') != -1:
+            init(m.weight)
+        elif classname.find('BatchNorm') != -1:
+            nn.init.normal_(m.weight, 1.0, 0.01)
+            nn.init.zeros_(m.bias)
+
+    return initializer
+
 class DownsampleBlock(nn.Module):
     def __init__(self, in_channels, out_channels):
         super(DownsampleBlock, self).__init__()
@@ -133,6 +152,8 @@ class RDUNet(nn.Module):
 
         self.output_block = OutputBlock(filters_0, channels)
 
+        self.apply(init_weights())  # Apply the weight initialization
+
     def forward(self, inputs):
         out_0 = self.input_block(inputs)
         out_0 = self.block_0_0(out_0)
@@ -186,6 +207,7 @@ def train_step(model, clean_images, noisy_images, optimizer, criterion):
     denoised_images = model(noisy_images)
     loss = criterion(denoised_images, clean_images)
     loss.backward()
+    nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)  # Add gradient clipping here
     optimizer.step()
     
     return loss.item()
