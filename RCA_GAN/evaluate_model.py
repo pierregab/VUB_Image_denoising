@@ -338,7 +338,7 @@ def evaluate_model_and_plot(epochs, diffusion_model_paths, unet_model_path, val_
 
     evaluate_unet = os.path.exists(unet_model_path)
     if evaluate_unet:
-        unet_model = RDUNet(base_filters=64).to(device)  # Updated to use RDUNet
+        unet_model = RDUNet(base_filters=128).to(device)  # Updated to use RDUNet
         unet_checkpoint = torch.load(unet_model_path, map_location=device)
         if 'model_state_dict' in unet_checkpoint:
             unet_model.load_state_dict(unet_checkpoint['model_state_dict'])
