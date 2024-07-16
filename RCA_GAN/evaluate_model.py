@@ -16,7 +16,7 @@ sys.path.append(project_root)
 
 from dataset_creation.data_loader import load_data
 from UNet.RDUNet_model import RDUNet
-from diffusion_denoising.diffusion_model import UNet_S_Checkpointed, DiffusionModel
+from diffusion_denoising.diffusion_RDUnet import DiffusionModel, RDUNet_T
 
 # Set high dpi for matplotlib
 plt.rcParams['figure.dpi'] = 300
@@ -109,7 +109,6 @@ def save_example_images(example_images, save_dir):
     plt.tight_layout()
     plt.savefig(os.path.join(save_dir, 'example_images.png'))
     plt.close()
-
 
 def save_error_map(gt_image, predicted_image, save_dir):
     error_map = np.abs(gt_image - predicted_image)
@@ -337,16 +336,20 @@ def evaluate_model_and_plot(epochs, diffusion_model_paths, unet_model_path, val_
     aggregated_diff_map_diffusion = None
     count = 0
 
-    unet_model = RDUNet(base_filters=128).to(device)  # Updated to use RDUNet
-    unet_checkpoint = torch.load(unet_model_path, map_location=device)
-    if 'model_state_dict' in unet_checkpoint:
-        unet_model.load_state_dict(unet_checkpoint['model_state_dict'])
+    evaluate_unet = os.path.exists(unet_model_path)
+    if evaluate_unet:
+        unet_model = RDUNet(base_filters=64).to(device)  # Updated to use RDUNet
+        unet_checkpoint = torch.load(unet_model_path, map_location=device)
+        if 'model_state_dict' in unet_checkpoint:
+            unet_model.load_state_dict(unet_checkpoint['model_state_dict'])
+        else:
+            unet_model.load_state_dict(unet_checkpoint)
+        unet_model.eval()
     else:
-        unet_model.load_state_dict(unet_checkpoint)
-    unet_model.eval()
+        print(f"UNet model path '{unet_model_path}' does not exist. Skipping UNet evaluation.")
 
     for epoch, diffusion_model_path in zip(epochs, diffusion_model_paths):
-        diffusion_model = DiffusionModel(UNet_S_Checkpointed())
+        diffusion_model = DiffusionModel(RDUNet_T(base_filters=64).to(device)).to(device)
         diffusion_checkpoint = torch.load(diffusion_model_path, map_location=device)
         if isinstance(diffusion_checkpoint, dict) and 'model_state_dict' in diffusion_checkpoint:
             diffusion_model.load_state_dict(diffusion_checkpoint['model_state_dict'])
@@ -355,42 +358,49 @@ def evaluate_model_and_plot(epochs, diffusion_model_paths, unet_model_path, val_
         diffusion_model.to(device)
         diffusion_model.eval()
 
-        for i, data in enumerate(tqdm(val_loader, desc=f"Evaluating Epoch {epoch}")):
+        for data in tqdm(val_loader, desc=f"Evaluating Epoch {epoch}"):
             if include_noise_level:
-                degraded_image, gt_image, noise_level = data
+                degraded_images, gt_images, noise_levels = data
             else:
-                degraded_image, gt_image = data
-                noise_level = None
+                degraded_images, gt_images = data
+                noise_levels = None
 
-            degraded_image = degraded_image.to(device)
-            gt_image = gt_image.to(device)
+            degraded_images = degraded_images.to(device)
+            gt_images = gt_images.to(device)
 
             with torch.no_grad():
                 t = torch.randint(0, diffusion_model.timesteps, (1,), device=device).float() / diffusion_model.timesteps
-                predicted_diffusion = diffusion_model.improved_sampling(degraded_image)
+                predicted_diffusions = diffusion_model.improved_sampling(degraded_images)
 
-                degraded_image_1 = degraded_image.mean(dim=1, keepdim=True)
-                gt_image_1 = gt_image.mean(dim=1, keepdim=True)
+                if evaluate_unet:
+                    predicted_unets = unet_model(degraded_images)
 
-                predicted_unet = unet_model(degraded_image)
+            for j in range(degraded_images.size(0)):
+                gt_image = gt_images[j]
+                degraded_image = degraded_images[j]
+                predicted_diffusion = predicted_diffusions[j]
+                if evaluate_unet:
+                    predicted_unet = predicted_unets[j]
 
-            for j in range(degraded_image.size(0)):
-                psnr_degraded, ssim_degraded, lpips_degraded, dists_degraded = compute_metrics(gt_image[j], degraded_image[j], lpips_model, dists_model, use_rgb=True)
-                psnr_diffusion, ssim_diffusion, lpips_diffusion, dists_diffusion = compute_metrics(gt_image[j], predicted_diffusion[j], lpips_model, dists_model, use_rgb=True)
-                psnr_unet, ssim_unet, lpips_unet, dists_unet = compute_metrics(gt_image[j], predicted_unet[j], lpips_model, dists_model)
+                psnr_degraded, ssim_degraded, lpips_degraded, dists_degraded = compute_metrics(gt_image, degraded_image, lpips_model, dists_model, use_rgb=True)
+                psnr_diffusion, ssim_diffusion, lpips_diffusion, dists_diffusion = compute_metrics(gt_image, predicted_diffusion, lpips_model, dists_model, use_rgb=True)
 
-                degraded_np = denormalize(degraded_image[j].cpu().numpy().squeeze())
-                gt_image_np = denormalize(gt_image[j].cpu().numpy().squeeze())
-                predicted_diffusion_np = denormalize(predicted_diffusion[j].cpu().numpy().squeeze())
-                predicted_unet_np = denormalize(predicted_unet[j].cpu().numpy().squeeze())
+                if evaluate_unet:
+                    psnr_unet, ssim_unet, lpips_unet, dists_unet = compute_metrics(gt_image, predicted_unet, lpips_model, dists_model)
+
+                degraded_np = denormalize(degraded_image.cpu().numpy().squeeze())
+                gt_image_np = denormalize(gt_image.cpu().numpy().squeeze())
+                predicted_diffusion_np = denormalize(predicted_diffusion.cpu().numpy().squeeze())
+                if evaluate_unet:
+                    predicted_unet_np = denormalize(predicted_unet.cpu().numpy().squeeze())
 
                 if use_bm3d:
                     bm3d_denoised = bm3d.bm3d(degraded_np, sigma_psd=30/255, stage_arg=bm3d.BM3DStages.ALL_STAGES)
-                    psnr_bm3d = calculate_psnr(denormalize(gt_image[j].cpu().numpy().squeeze()), bm3d_denoised, data_range=1.0)
-                    ssim_bm3d = calculate_ssim(denormalize(gt_image[j].cpu().numpy().squeeze()), bm3d_denoised)
+                    psnr_bm3d = calculate_psnr(gt_image_np, bm3d_denoised, data_range=1.0)
+                    ssim_bm3d = calculate_ssim(gt_image_np, bm3d_denoised)
                     bm3d_denoised_tensor = torch.tensor(bm3d_denoised).unsqueeze(0).repeat(3, 1, 1).unsqueeze(0).to(device)
-                    lpips_bm3d = lpips_model(normalize_to_neg1_1(gt_image[j].unsqueeze(0).repeat(3, 1, 1, 1)), normalize_to_neg1_1(bm3d_denoised_tensor)).item()
-                    dists_bm3d = dists_model(normalize_to_neg1_1(gt_image[j].unsqueeze(0).repeat(3, 1, 1, 1)), normalize_to_neg1_1(bm3d_denoised_tensor)).item()
+                    lpips_bm3d = lpips_model(normalize_to_neg1_1(gt_image.unsqueeze(0).repeat(3, 1, 1, 1)), normalize_to_neg1_1(bm3d_denoised_tensor)).item()
+                    dists_bm3d = dists_model(normalize_to_neg1_1(gt_image.unsqueeze(0).repeat(3, 1, 1, 1)), normalize_to_neg1_1(bm3d_denoised_tensor)).item()
                 else:
                     psnr_bm3d = 0
                     ssim_bm3d = 0
@@ -398,39 +408,58 @@ def evaluate_model_and_plot(epochs, diffusion_model_paths, unet_model_path, val_
                     dists_bm3d = 0
 
                 metrics['epoch'].append(epoch)
-                metrics['noise_level'].append(noise_level[j].item() if noise_level is not None else 0)
+                metrics['noise_level'].append(noise_levels[j].item() if noise_levels is not None else 0)
                 metrics['psnr_degraded'].append(psnr_degraded)
                 metrics['psnr_diffusion'].append(psnr_diffusion)
-                metrics['psnr_unet'].append(psnr_unet)
+                if evaluate_unet:
+                    metrics['psnr_unet'].append(psnr_unet)
+                else:
+                    metrics['psnr_unet'].append(0)
                 metrics['psnr_bm3d'].append(psnr_bm3d)
                 metrics['ssim_degraded'].append(ssim_degraded)
                 metrics['ssim_diffusion'].append(ssim_diffusion)
-                metrics['ssim_unet'].append(ssim_unet)
+                if evaluate_unet:
+                    metrics['ssim_unet'].append(ssim_unet)
+                else:
+                    metrics['ssim_unet'].append(0)
                 metrics['ssim_bm3d'].append(ssim_bm3d)
                 metrics['lpips_degraded'].append(lpips_degraded)
                 metrics['lpips_diffusion'].append(lpips_diffusion)
-                metrics['lpips_unet'].append(lpips_unet)
+                if evaluate_unet:
+                    metrics['lpips_unet'].append(lpips_unet)
+                else:
+                    metrics['lpips_unet'].append(0)
                 metrics['lpips_bm3d'].append(lpips_bm3d)
                 metrics['dists_degraded'].append(dists_degraded)
                 metrics['dists_diffusion'].append(dists_diffusion)
-                metrics['dists_unet'].append(dists_unet)
+                if evaluate_unet:
+                    metrics['dists_unet'].append(dists_unet)
+                else:
+                    metrics['dists_unet'].append(0)
                 metrics['dists_bm3d'].append(dists_bm3d)
                 metrics['gt_image'].append(gt_image_np)
                 metrics['degraded_image'].append(degraded_np)
-                metrics['predicted_unet_image'].append(predicted_unet_np)
+                if evaluate_unet:
+                    metrics['predicted_unet_image'].append(predicted_unet_np)
+                else:
+                    metrics['predicted_unet_image'].append(np.zeros_like(gt_image_np))
                 metrics['predicted_diffusion_image'].append(predicted_diffusion_np)
 
                 if aggregated_diff_map_unet is None:
-                    aggregated_diff_map_unet = np.abs(gt_image_np - predicted_unet_np)
+                    aggregated_diff_map_unet = np.abs(gt_image_np - (predicted_unet_np if evaluate_unet else np.zeros_like(gt_image_np)))
                     aggregated_diff_map_diffusion = np.abs(gt_image_np - predicted_diffusion_np)
                 else:
-                    aggregated_diff_map_unet += np.abs(gt_image_np - predicted_unet_np)
+                    if evaluate_unet:
+                        aggregated_diff_map_unet += np.abs(gt_image_np - predicted_unet_np)
                     aggregated_diff_map_diffusion += np.abs(gt_image_np - predicted_diffusion_np)
                 count += 1
 
-                sigma_level = int(noise_level[j].item()) if noise_level is not None else 0
-                if sigma_level in [15, 30, 50] and (epoch, sigma_level) not in example_images:
-                    example_images[(epoch, sigma_level)] = (gt_image_np, degraded_np, predicted_unet_np, predicted_diffusion_np)
+                sigma_level = int(noise_levels[j].item()) if noise_levels is not None else 0
+                if sigma_level in [15, 30, 50]:
+                    if evaluate_unet:
+                        example_images[(epoch, sigma_level)] = (gt_image_np, degraded_np, predicted_unet_np, predicted_diffusion_np)
+                    else:
+                        example_images[(epoch, sigma_level)] = (gt_image_np, degraded_np, np.zeros_like(gt_image_np), predicted_diffusion_np)
 
     aggregated_diff_map_unet /= count
     aggregated_diff_map_diffusion /= count
@@ -598,8 +627,8 @@ if __name__ == "__main__":
 
     train_loader, val_loader = load_data(image_folder, batch_size=1, num_workers=8, validation_split=0.5, augment=False, dataset_percentage=0.01, only_validation=False, include_noise_level=True, train_noise_levels=train_noise_levels, val_noise_levels=val_noise_levels, use_rgb=True)
 
-    epochs_to_evaluate = [200]
-    diffusion_model_paths = [f"checkpoints/diffusion_model_checkpointed_epoch_{epoch}.pth" for epoch in epochs_to_evaluate]
+    epochs_to_evaluate = [148]
+    diffusion_model_paths = [f"checkpoints/diffusion_RDUnet_model_checkpointed_epoch_{epoch}.pth" for epoch in epochs_to_evaluate]
     unet_model_path = "checkpoints/rdunet_denoising.pth"
 
     selected_studies = ['metrics', 'dists', 'example_images', 'histograms_of_differences', 'heatmaps', 'frequency_domain_analysis']

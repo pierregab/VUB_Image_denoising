@@ -3,12 +3,9 @@ import torch.nn as nn
 import torch.optim as optim
 import sys
 import os
-import psutil
 import subprocess
 from torch.utils.tensorboard import SummaryWriter
 from torchvision.utils import make_grid
-import time
-import torch.utils.checkpoint as cp
 from torch.optim.lr_scheduler import CosineAnnealingLR
 import pytorch_msssim
 
@@ -21,197 +18,90 @@ from dataset_creation.data_loader import load_data
 # Set device
 device = torch.device("cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu")
 
-@torch.no_grad()
-def init_weights(init_type='xavier'):
-    if init_type == 'xavier':
-        init = nn.init.xavier_normal_
-    elif init_type == 'he':
-        init = nn.init.kaiming_normal_
-    else:
-        init = nn.init.orthogonal_
+import torch
+import torch.nn as nn
 
-    def initializer(m):
-        classname = m.__class__.__name__
-        if classname.find('Conv2d') != -1:
-            init(m.weight)
-        elif classname.find('BatchNorm') != -1:
-            nn.init.normal_(m.weight, 1.0, 0.01)
-            nn.init.zeros_(m.bias)
+class SimpleBlock(nn.Module):
+    def __init__(self, in_channels, out_channels):
+        super(SimpleBlock, self).__init__()
+        self.conv = nn.Conv2d(in_channels, out_channels, 3, padding=1)
+        self.bn = nn.BatchNorm2d(out_channels)
+        self.relu = nn.ReLU(inplace=True)
 
-    return initializer
+    def forward(self, x):
+        return self.relu(self.bn(self.conv(x)))
 
 class DownsampleBlock(nn.Module):
     def __init__(self, in_channels, out_channels):
         super(DownsampleBlock, self).__init__()
-        self.conv = nn.Conv2d(in_channels, out_channels, kernel_size=2, stride=2)
-        self.actv = nn.PReLU(out_channels)
+        self.conv = nn.Conv2d(in_channels, out_channels, 3, stride=2, padding=1)
+        self.bn = nn.BatchNorm2d(out_channels)
+        self.relu = nn.ReLU(inplace=True)
 
     def forward(self, x):
-        return self.actv(self.conv(x))
+        return self.relu(self.bn(self.conv(x)))
 
 class UpsampleBlock(nn.Module):
-    def __init__(self, in_channels, cat_channels, out_channels):
+    def __init__(self, in_channels, out_channels):
         super(UpsampleBlock, self).__init__()
-        self.conv = nn.Conv2d(in_channels + cat_channels, out_channels, 3, padding=1)
-        self.conv_t = nn.ConvTranspose2d(in_channels, in_channels, 2, stride=2)
-        self.actv = nn.PReLU(out_channels)
-        self.actv_t = nn.PReLU(in_channels)
+        self.conv = nn.ConvTranspose2d(in_channels, out_channels, 2, stride=2)
+        self.bn = nn.BatchNorm2d(out_channels)
+        self.relu = nn.ReLU(inplace=True)
 
-    def forward(self, x):
-        upsample, concat = x
-        upsample = self.actv_t(self.conv_t(upsample))
-        return self.actv(self.conv(torch.cat([concat, upsample], 1)))
+    def forward(self, x, skip):
+        x = self.relu(self.bn(self.conv(x)))
+        return torch.cat([x, skip], 1)
 
-class InputBlock(nn.Module):
-    def __init__(self, in_channels, out_channels):
-        super(InputBlock, self).__init__()
-        self.conv_1 = nn.Conv2d(in_channels, out_channels, 3, padding=1)
-        self.conv_2 = nn.Conv2d(out_channels, out_channels, 3, padding=1)
-        self.actv_1 = nn.PReLU(out_channels)
-        self.actv_2 = nn.PReLU(out_channels)
+class SimpleUNet(nn.Module):
+    def __init__(self, in_channels=4, out_channels=3, base_filters=32):
+        super(SimpleUNet, self).__init__()
+        
+        self.inc = SimpleBlock(in_channels, base_filters)
+        self.down1 = DownsampleBlock(base_filters, base_filters*2)
+        self.down2 = DownsampleBlock(base_filters*2, base_filters*4)
+        
+        self.middle = SimpleBlock(base_filters*4, base_filters*4)
+        
+        self.up2 = UpsampleBlock(base_filters*4, base_filters*2)
+        self.up1 = UpsampleBlock(base_filters*4, base_filters)
+        
+        self.outc = nn.Conv2d(base_filters*2, out_channels, 1)
 
-    def forward(self, x):
-        x = self.actv_1(self.conv_1(x))
-        return self.actv_2(self.conv_2(x))
+    def forward(self, x, t):
+        t = t.expand(x.size(0), 1, x.size(2), x.size(3))
+        x = torch.cat((x, t), dim=1)
+        
+        x1 = self.inc(x)
+        x2 = self.down1(x1)
+        x3 = self.down2(x2)
+        
+        x3 = self.middle(x3)
+        
+        x = self.up2(x3, x2)
+        x = self.up1(x, x1)
+        
+        return self.outc(x)
 
-class OutputBlock(nn.Module):
-    def __init__(self, in_channels, out_channels):
-        super(OutputBlock, self).__init__()
-        self.conv_1 = nn.Conv2d(in_channels, in_channels, 3, padding=1)
-        self.conv_2 = nn.Conv2d(in_channels, out_channels, 3, padding=1)
-        self.actv_1 = nn.PReLU(in_channels)
-        self.actv_2 = nn.PReLU(out_channels)
-
-    def forward(self, x):
-        x = self.actv_1(self.conv_1(x))
-        return self.actv_2(self.conv_2(x))
-
-class DenoisingBlock(nn.Module):
-    def __init__(self, in_channels, inner_channels, out_channels):
-        super(DenoisingBlock, self).__init__()
-        self.conv_0 = nn.Conv2d(in_channels, inner_channels, 3, padding=1)
-        self.conv_1 = nn.Conv2d(in_channels + inner_channels, inner_channels, 3, padding=1)
-        self.conv_2 = nn.Conv2d(in_channels + 2 * inner_channels, inner_channels, 3, padding=1)
-        self.conv_3 = nn.Conv2d(in_channels + 3 * inner_channels, out_channels, 3, padding=1)
-        self.actv_0 = nn.PReLU(inner_channels)
-        self.actv_1 = nn.PReLU(inner_channels)
-        self.actv_2 = nn.PReLU(inner_channels)
-        self.actv_3 = nn.PReLU(out_channels)
-
-    def forward(self, x):
-        out_0 = self.actv_0(self.conv_0(x))
-        out_0 = torch.cat([x, out_0], 1)
-        out_1 = self.actv_1(self.conv_1(out_0))
-        out_1 = torch.cat([out_0, out_1], 1)
-        out_2 = self.actv_2(self.conv_2(out_1))
-        out_2 = torch.cat([out_1, out_2], 1)
-        out_3 = self.actv_3(self.conv_3(out_2))
-        return out_3 + x
-
-# Modified RDUNet to handle timestep input
-class RDUNet_T(nn.Module):
-    def __init__(self, channels=4, base_filters=64):  # channels=4 to include the timestep channel
-        super(RDUNet_T, self).__init__()
-        filters_0 = base_filters
-        filters_1 = 2 * filters_0
-        filters_2 = 4 * filters_0
-        filters_3 = 8 * filters_0
-
-        self.input_block = InputBlock(channels, filters_0)
-        self.block_0_0 = DenoisingBlock(filters_0, filters_0 // 2, filters_0)
-        self.block_0_1 = DenoisingBlock(filters_0, filters_0 // 2, filters_0)
-        self.down_0 = DownsampleBlock(filters_0, filters_1)
-
-        self.block_1_0 = DenoisingBlock(filters_1, filters_1 // 2, filters_1)
-        self.block_1_1 = DenoisingBlock(filters_1, filters_1 // 2, filters_1)
-        self.down_1 = DownsampleBlock(filters_1, filters_2)
-
-        self.block_2_0 = DenoisingBlock(filters_2, filters_2 // 2, filters_2)
-        self.block_2_1 = DenoisingBlock(filters_2, filters_2 // 2, filters_2)
-        self.down_2 = DownsampleBlock(filters_2, filters_3)
-
-        self.block_3_0 = DenoisingBlock(filters_3, filters_3 // 2, filters_3)
-        self.block_3_1 = DenoisingBlock(filters_3, filters_3 // 2, filters_3)
-
-        self.up_2 = UpsampleBlock(filters_3, filters_2, filters_2)
-        self.block_2_2 = DenoisingBlock(filters_2, filters_2 // 2, filters_2)
-        self.block_2_3 = DenoisingBlock(filters_2, filters_2 // 2, filters_2)
-
-        self.up_1 = UpsampleBlock(filters_2, filters_1, filters_1)
-        self.block_1_2 = DenoisingBlock(filters_1, filters_1 // 2, filters_1)
-        self.block_1_3 = DenoisingBlock(filters_1, filters_1 // 2, filters_1)
-
-        self.up_0 = UpsampleBlock(filters_1, filters_0, filters_0)
-        self.block_0_2 = DenoisingBlock(filters_0, filters_0 // 2, filters_0)
-        self.block_0_3 = DenoisingBlock(filters_0, filters_0 // 2, filters_0)
-
-        self.output_block = OutputBlock(filters_0, 3)
-
-        self.apply(init_weights())  # Apply the weight initialization
-
-    def forward(self, inputs, t):
-        # Concatenate the time step with the input image
-        t = t.expand(inputs.size(0), 1, inputs.size(2), inputs.size(3))
-        x = torch.cat((inputs, t), dim=1)
-
-        out_0 = self.input_block(x)
-        out_0 = self.block_0_0(out_0)
-        out_0 = self.block_0_1(out_0)
-
-        out_1 = self.down_0(out_0)
-        out_1 = self.block_1_0(out_1)
-        out_1 = self.block_1_1(out_1)
-
-        out_2 = self.down_1(out_1)
-        out_2 = self.block_2_0(out_2)
-        out_2 = self.block_2_1(out_2)
-
-        out_3 = self.down_2(out_2)
-        out_3 = self.block_3_0(out_3)
-        out_3 = self.block_3_1(out_3)
-
-        out_4 = self.up_2([out_3, out_2])
-        out_4 = self.block_2_2(out_4)
-        out_4 = self.block_2_3(out_4)
-
-        out_5 = self.up_1([out_4, out_1])
-        out_5 = self.block_1_2(out_5)
-        out_5 = self.block_1_3(out_5)
-
-        out_6 = self.up_0([out_5, out_0])
-        out_6 = self.block_0_2(out_6)
-        out_6 = self.block_0_3(out_6)
-
-        return self.output_block(out_6) + inputs
-
-class DiffusionModel(nn.Module):
-    def __init__(self, unet, timesteps=70):
-        super(DiffusionModel, self).__init__()
+class SimpleDiffusionModel(nn.Module):
+    def __init__(self, unet, timesteps=50):
+        super(SimpleDiffusionModel, self).__init__()
         self.unet = unet
         self.timesteps = timesteps
 
     def forward_diffusion(self, clean_image, noisy_image, t):
         alpha = t / self.timesteps
-        interpolated_image = alpha * noisy_image + (1 - alpha) * clean_image
-        return interpolated_image
+        return alpha * noisy_image + (1 - alpha) * clean_image
 
-    def improved_sampling(self, noisy_image):
+    def sampling(self, noisy_image):
         x_t = noisy_image
         for t in reversed(range(1, self.timesteps + 1)):
-            alpha_t = t / self.timesteps
-            alpha_t_prev = (t - 1) / self.timesteps
             t_tensor = torch.tensor([t / self.timesteps], device=noisy_image.device).unsqueeze(0).unsqueeze(2).unsqueeze(3)
-            x_t_unet = self.unet(x_t, t_tensor)
-            x_tilde = (1 - alpha_t) * x_t_unet + alpha_t * noisy_image
-            t_tensor_prev = torch.tensor([(t - 1) / self.timesteps], device=noisy_image.device).unsqueeze(0).unsqueeze(2).unsqueeze(3)
-            x_tilde_prev_unet = self.unet(x_t, t_tensor_prev)
-            x_tilde_prev = (1 - alpha_t_prev) * x_tilde_prev_unet + alpha_t_prev * noisy_image
-            x_t = x_t - x_tilde + x_tilde_prev
+            x_t = self.unet(x_t, t_tensor)
         return x_t
 
     def forward(self, clean_image, noisy_image, t):
         noisy_step_image = self.forward_diffusion(clean_image, noisy_image, t)
-        denoised_image = self.improved_sampling(noisy_step_image)
+        denoised_image = self.sampling(noisy_step_image)
         return denoised_image
 
 def charbonnier_loss(pred, target, epsilon=1e-3):
@@ -225,8 +115,8 @@ def combined_loss(pred, target, mse_weight=0, charbonnier_weight=1, ssim_weight=
     return mse_weight * mse_loss + charbonnier_weight * charbonnier + ssim_weight * ssim_loss
 
 # Define the checkpointed model and optimizer
-unet_checkpointed = RDUNet_T(base_filters=64).to(device)
-model_checkpointed = DiffusionModel(unet_checkpointed).to(device)
+unet_checkpointed = SimpleUNet(base_filters=64).to(device)
+model_checkpointed = SimpleDiffusionModel(unet_checkpointed).to(device)
 optimizer = optim.Adam(model_checkpointed.parameters(), lr=2e-4, betas=(0.9, 0.999))
 scheduler = CosineAnnealingLR(optimizer, T_max=10)
 
@@ -296,7 +186,7 @@ def train_model_checkpointed(model, train_loader, val_loader, optimizer, schedul
             val_noisy_images, val_clean_images = val_noisy_images.to(device), val_clean_images.to(device)
 
             # Generate denoised images using only the noisy images
-            denoised_images = model.improved_sampling(val_noisy_images)
+            denoised_images = model.sampling(val_noisy_images)  # Updated method call
             
             # Calculate validation loss
             validation_loss = combined_loss(denoised_images, val_clean_images)
@@ -325,7 +215,7 @@ def train_model_checkpointed(model, train_loader, val_loader, optimizer, schedul
         scheduler.step()
 
         # Save the model checkpoint after each epoch
-        checkpoint_path = os.path.join("checkpoints", f"diffusion_RDUnet_model_checkpointed_epoch_{epoch + 1}.pth")
+        checkpoint_path = os.path.join("checkpoints", f"diffusion_SimplifiedUNet_model_checkpointed_epoch_{epoch + 1}.pth")
         os.makedirs(os.path.dirname(checkpoint_path), exist_ok=True)
         torch.save({
             'epoch': epoch + 1,
@@ -370,10 +260,10 @@ if __name__ == "__main__":
         start_tensorboard(log_dir)
         
         image_folder = 'DIV2K_train_HR.nosync'
-        train_loader, val_loader = load_data(image_folder, batch_size=4, augment=False, dataset_percentage=0.01, validation_split=0.1, use_rgb=True, num_workers=8)
+        train_loader, val_loader = load_data(image_folder, batch_size=16, augment=False, dataset_percentage=0.1, validation_split=0.1, use_rgb=True, num_workers=8)
         
         # Load checkpoint if exists
-        checkpoint_path = os.path.join("checkpoints", "diffusion_RDUnet_model_checkpointed_epoch_89.pth")
+        checkpoint_path = os.path.join("checkpoints", "diffusion_SimplifiedUNet_model_checkpointed_epoch_7.pth")
         start_epoch = load_checkpoint(model_checkpointed, optimizer, scheduler, checkpoint_path)
         
         train_model_checkpointed(model_checkpointed, train_loader, val_loader, optimizer, scheduler, writer, num_epochs=300, start_epoch=start_epoch)
