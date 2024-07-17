@@ -173,7 +173,7 @@ def save_heatmaps(aggregated_diff_map_unet, aggregated_diff_map_diffusion, save_
     plt.savefig(os.path.join(save_dir, 'heatmaps.png'))
     plt.close()
 
-def save_frequency_domain_analysis(metrics, last_epoch, save_dir):
+def save_frequency_domain_analysis(metrics, last_epoch, save_dir, high_freq_threshold=0.5):
     epochs = sorted(set(metrics['epoch']))
     noise_levels = np.array(metrics['noise_level'])
     unique_noise_levels = sorted(np.unique(noise_levels))
@@ -198,13 +198,19 @@ def save_frequency_domain_analysis(metrics, last_epoch, save_dir):
             _, Pxx_unet = welch(predicted_unet_image.flatten(), nperseg=256)
             _, Pxx_diffusion = welch(predicted_diffusion_image.flatten(), nperseg=256)
 
-            # Normalize the power spectral densities
-            Pxx_gt_norm = Pxx_gt / np.sum(Pxx_gt)
-            Pxx_unet_norm = Pxx_unet / np.sum(Pxx_unet)
-            Pxx_diffusion_norm = Pxx_diffusion / np.sum(Pxx_diffusion)
+            high_freq_idx = f >= high_freq_threshold * np.max(f)
 
-            mae_diff_unet.append(np.mean(np.abs(Pxx_gt_norm - Pxx_unet_norm)))
-            mae_diff_diffusion.append(np.mean(np.abs(Pxx_gt_norm - Pxx_diffusion_norm)))
+            Pxx_gt_high = Pxx_gt[high_freq_idx]
+            Pxx_unet_high = Pxx_unet[high_freq_idx]
+            Pxx_diffusion_high = Pxx_diffusion[high_freq_idx]
+
+            # Normalize the power spectral densities
+            Pxx_gt_high_norm = Pxx_gt_high / np.sum(Pxx_gt_high)
+            Pxx_unet_high_norm = Pxx_unet_high / np.sum(Pxx_unet_high)
+            Pxx_diffusion_high_norm = Pxx_diffusion_high / np.sum(Pxx_diffusion_high)
+
+            mae_diff_unet.append(np.mean(np.abs(Pxx_gt_high_norm - Pxx_unet_high_norm)))
+            mae_diff_diffusion.append(np.mean(np.abs(Pxx_gt_high_norm - Pxx_diffusion_high_norm)))
 
         avg_mae_diff_unet.append(np.mean(mae_diff_unet))
         avg_mae_diff_diffusion.append(np.mean(mae_diff_diffusion))
@@ -213,15 +219,15 @@ def save_frequency_domain_analysis(metrics, last_epoch, save_dir):
     plt.plot(unique_noise_levels, avg_mae_diff_unet, 'o-', label='UNet Model', color='purple')
     plt.plot(unique_noise_levels, avg_mae_diff_diffusion, 'o-', label=f'Diffusion Model (Epoch {last_epoch})', color='green')
     plt.xlabel('Noise Standard Deviation')
-    plt.ylabel('Normalized MAE in Frequency Domain')
-    plt.title('Normalized MAE in Frequency Domain Analysis')
+    plt.ylabel('Normalized MAE in High-Frequency Domain')
+    plt.title('Normalized MAE in High-Frequency Domain Analysis')
     plt.legend()
     plt.grid()
     plt.tight_layout()
-    plt.savefig(os.path.join(save_dir, 'normalized_frequency_domain_analysis.png'))
+    plt.savefig(os.path.join(save_dir, 'normalized_high_frequency_domain_analysis.png'))
     plt.close()
 
-def save_frequency_domain_analysis_multiple_epochs(metrics, epochs, save_dir):
+def save_frequency_domain_analysis_multiple_epochs(metrics, epochs, save_dir, high_freq_threshold=0.5):
     noise_levels = np.array(metrics['noise_level'])
     unique_noise_levels = sorted(np.unique(noise_levels))
 
@@ -247,8 +253,14 @@ def save_frequency_domain_analysis_multiple_epochs(metrics, epochs, save_dir):
             _, Pxx_unet = welch(predicted_unet_image.flatten(), nperseg=256)
             _, Pxx_diffusion = welch(predicted_diffusion_image.flatten(), nperseg=256)
 
-            mae_diff_unet.append(np.mean(np.abs(Pxx_gt - Pxx_unet)))
-            mae_diff_diffusion[epoch].append(np.mean(np.abs(Pxx_gt - Pxx_diffusion)))
+            high_freq_idx = f >= high_freq_threshold * np.max(f)
+
+            Pxx_gt_high = Pxx_gt[high_freq_idx]
+            Pxx_unet_high = Pxx_unet[high_freq_idx]
+            Pxx_diffusion_high = Pxx_diffusion[high_freq_idx]
+
+            mae_diff_unet.append(np.mean(np.abs(Pxx_gt_high - Pxx_unet_high)))
+            mae_diff_diffusion[epoch].append(np.mean(np.abs(Pxx_gt_high - Pxx_diffusion_high)))
 
         avg_mae_diff_unet.append(np.mean(mae_diff_unet))
         for epoch in epochs:
@@ -260,15 +272,15 @@ def save_frequency_domain_analysis_multiple_epochs(metrics, epochs, save_dir):
     for idx, epoch in enumerate(epochs):
         plt.plot(unique_noise_levels, avg_mae_diff_diffusion[epoch], 'o-', label=f'Diffusion Model (Epoch {epoch})', color=colors[idx % len(colors)])
     plt.xlabel('Noise Standard Deviation')
-    plt.ylabel('MAE in Frequency Domain')
-    plt.title('MAE in Frequency Domain Analysis')
+    plt.ylabel('MAE in High-Frequency Domain')
+    plt.title('MAE in High-Frequency Domain Analysis')
     plt.legend()
     plt.grid()
     plt.tight_layout()
-    plt.savefig(os.path.join(save_dir, 'frequency_domain_analysis_multiple_epochs.png'))
+    plt.savefig(os.path.join(save_dir, 'high_frequency_domain_analysis_multiple_epochs.png'))
     plt.close()
 
-def plot_psd_comparison(metrics, last_epoch, save_dir):
+def plot_psd_comparison(metrics, last_epoch, save_dir, high_freq_threshold=0.5):
     epochs = sorted(set(metrics['epoch']))
     noise_levels = np.array(metrics['noise_level'])
     unique_noise_levels = sorted(np.unique(noise_levels))
@@ -297,10 +309,12 @@ def plot_psd_comparison(metrics, last_epoch, save_dir):
             _, Pxx_unet = welch(predicted_unet_image.flatten(), nperseg=256)
             _, Pxx_diffusion = welch(predicted_diffusion_image.flatten(), nperseg=256)
 
-            psd_gt_all.append(Pxx_gt)
-            psd_degraded_all.append(Pxx_degraded)
-            psd_unet_all.append(Pxx_unet)
-            psd_diffusion_all.append(Pxx_diffusion)
+            high_freq_idx = f_gt >= high_freq_threshold * np.max(f_gt)
+
+            psd_gt_all.append(Pxx_gt[high_freq_idx])
+            psd_degraded_all.append(Pxx_degraded[high_freq_idx])
+            psd_unet_all.append(Pxx_unet[high_freq_idx])
+            psd_diffusion_all.append(Pxx_diffusion[high_freq_idx])
         
         avg_psd_gt = np.mean(psd_gt_all, axis=0)
         avg_psd_degraded = np.mean(psd_degraded_all, axis=0)
@@ -308,10 +322,10 @@ def plot_psd_comparison(metrics, last_epoch, save_dir):
         avg_psd_diffusion = np.mean(psd_diffusion_all, axis=0)
 
         plt.figure(figsize=(10, 6))
-        plt.plot(f_gt, avg_psd_gt, label='Ground Truth', color='black')
-        plt.plot(f_gt, avg_psd_degraded, label='Degraded', color='red')
-        plt.plot(f_gt, avg_psd_unet, label='UNet Model', color='purple')
-        plt.plot(f_gt, avg_psd_diffusion, label=f'Diffusion Model (Epoch {last_epoch})', color='green')
+        plt.plot(f_gt[high_freq_idx], avg_psd_gt, label='Ground Truth', color='black')
+        plt.plot(f_gt[high_freq_idx], avg_psd_degraded, label='Degraded', color='red')
+        plt.plot(f_gt[high_freq_idx], avg_psd_unet, label='UNet Model', color='purple')
+        plt.plot(f_gt[high_freq_idx], avg_psd_diffusion, label=f'Diffusion Model (Epoch {last_epoch})', color='green')
         plt.xlabel('Frequency')
         plt.ylabel('Power Spectral Density (Log Scale)')
         plt.yscale('log')
@@ -319,7 +333,7 @@ def plot_psd_comparison(metrics, last_epoch, save_dir):
         plt.legend()
         plt.grid(True, which="both", ls="--")
         plt.tight_layout()
-        plt.savefig(os.path.join(save_dir, f'psd_comparison_noise_level_{nl}.png'))
+        plt.savefig(os.path.join(save_dir, f'psd_comparison_high_freq_noise_level_{nl}.png'))
         plt.close()
 
 def evaluate_model_and_plot(epochs, diffusion_model_paths, unet_model_path, val_loader, device, include_noise_level=False, use_bm3d=False, save_dir='results', studies=None):
