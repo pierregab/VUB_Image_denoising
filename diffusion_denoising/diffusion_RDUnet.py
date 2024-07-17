@@ -185,7 +185,7 @@ class RDUNet_T(nn.Module):
         return self.output_block(out_6) + inputs
 
 class DiffusionModel(nn.Module):
-    def __init__(self, unet, timesteps=70):
+    def __init__(self, unet, timesteps=20):
         super(DiffusionModel, self).__init__()
         self.unet = unet
         self.timesteps = timesteps
@@ -225,7 +225,7 @@ def combined_loss(pred, target, mse_weight=0, charbonnier_weight=1, ssim_weight=
     return mse_weight * mse_loss + charbonnier_weight * charbonnier + ssim_weight * ssim_loss
 
 # Define the checkpointed model and optimizer
-unet_checkpointed = RDUNet_T(base_filters=64).to(device)
+unet_checkpointed = RDUNet_T(base_filters=32).to(device)
 model_checkpointed = DiffusionModel(unet_checkpointed).to(device)
 optimizer = optim.Adam(model_checkpointed.parameters(), lr=2e-4, betas=(0.9, 0.999))
 scheduler = CosineAnnealingLR(optimizer, T_max=10)
