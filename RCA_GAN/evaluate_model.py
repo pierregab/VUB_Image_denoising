@@ -10,6 +10,7 @@ from tqdm import tqdm
 import lpips
 from DISTS_pytorch import DISTS
 from scipy.signal import welch
+import time
 
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 sys.path.append(project_root)
@@ -336,6 +337,8 @@ def evaluate_model_and_plot(epochs, diffusion_model_paths, unet_model_path, val_
     aggregated_diff_map_diffusion = None
     count = 0
 
+    inference_times = {'unet': [], 'diffusion': []}
+
     evaluate_unet = os.path.exists(unet_model_path)
     if evaluate_unet:
         unet_model = RDUNet(base_filters=128).to(device)  # Updated to use RDUNet
@@ -349,7 +352,7 @@ def evaluate_model_and_plot(epochs, diffusion_model_paths, unet_model_path, val_
         print(f"UNet model path '{unet_model_path}' does not exist. Skipping UNet evaluation.")
 
     for epoch, diffusion_model_path in zip(epochs, diffusion_model_paths):
-        diffusion_model = DiffusionModel(RDUNet_T(base_filters=64).to(device)).to(device)
+        diffusion_model = DiffusionModel(RDUNet_T(base_filters=32).to(device)).to(device)
         diffusion_checkpoint = torch.load(diffusion_model_path, map_location=device)
         if isinstance(diffusion_checkpoint, dict) and 'model_state_dict' in diffusion_checkpoint:
             diffusion_model.load_state_dict(diffusion_checkpoint['model_state_dict'])
@@ -369,11 +372,25 @@ def evaluate_model_and_plot(epochs, diffusion_model_paths, unet_model_path, val_
             gt_images = gt_images.to(device)
 
             with torch.no_grad():
+                # Measure inference time for the diffusion model
+                start_time = time.time()
                 t = torch.randint(0, diffusion_model.timesteps, (1,), device=device).float() / diffusion_model.timesteps
                 predicted_diffusions = diffusion_model.improved_sampling(degraded_images)
+                if torch.cuda.is_available():
+                    torch.cuda.synchronize()
+                end_time = time.time()
+                diffusion_inference_time = end_time - start_time
+                inference_times['diffusion'].append(diffusion_inference_time)
 
                 if evaluate_unet:
+                    # Measure inference time for the UNet model
+                    start_time = time.time()
                     predicted_unets = unet_model(degraded_images)
+                    if torch.cuda.is_available():
+                        torch.cuda.synchronize()
+                    end_time = time.time()
+                    unet_inference_time = end_time - start_time
+                    inference_times['unet'].append(unet_inference_time)
 
             for j in range(degraded_images.size(0)):
                 gt_image = gt_images[j]
@@ -484,6 +501,9 @@ def evaluate_model_and_plot(epochs, diffusion_model_paths, unet_model_path, val_
     
     # Call the PSD comparison plotting
     plot_psd_comparison(metrics, epochs[-1], save_dir)
+
+    # Save the inference time comparison plot
+    save_inference_time_plot(inference_times, save_dir)
 
 def save_metrics(metrics, last_epoch, use_bm3d, save_dir):
     epochs = sorted(set(metrics['epoch']))
@@ -618,6 +638,20 @@ def save_dists(metrics, last_epoch, save_dir):
     plt.savefig(os.path.join(save_dir, 'dists.png'))
     plt.close()
 
+def save_inference_time_plot(inference_times, save_dir):
+    avg_inference_time_unet = np.mean(inference_times['unet'])
+    avg_inference_time_diffusion = np.mean(inference_times['diffusion'])
+
+    labels = ['UNet', 'Diffusion']
+    times = [avg_inference_time_unet, avg_inference_time_diffusion]
+
+    plt.figure(figsize=(10, 6))
+    plt.bar(labels, times, color=['purple', 'green'])
+    plt.ylabel('Average Inference Time (s)')
+    plt.title('Average Inference Time Comparison')
+    plt.savefig(os.path.join(save_dir, 'inference_time_comparison.png'))
+    plt.close()
+
 if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() else "mps")
 
@@ -627,7 +661,7 @@ if __name__ == "__main__":
 
     train_loader, val_loader = load_data(image_folder, batch_size=1, num_workers=8, validation_split=0.5, augment=False, dataset_percentage=0.01, only_validation=False, include_noise_level=True, train_noise_levels=train_noise_levels, val_noise_levels=val_noise_levels, use_rgb=True)
 
-    epochs_to_evaluate = [148]
+    epochs_to_evaluate = [210]
     diffusion_model_paths = [f"checkpoints/diffusion_RDUnet_model_checkpointed_epoch_{epoch}.pth" for epoch in epochs_to_evaluate]
     unet_model_path = "checkpoints/rdunet_denoising.pth"
 
