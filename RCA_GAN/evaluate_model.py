@@ -204,13 +204,8 @@ def save_frequency_domain_analysis(metrics, last_epoch, save_dir, high_freq_thre
             Pxx_unet_high = Pxx_unet[high_freq_idx]
             Pxx_diffusion_high = Pxx_diffusion[high_freq_idx]
 
-            # Normalize the power spectral densities
-            Pxx_gt_high_norm = Pxx_gt_high / np.sum(Pxx_gt_high)
-            Pxx_unet_high_norm = Pxx_unet_high / np.sum(Pxx_unet_high)
-            Pxx_diffusion_high_norm = Pxx_diffusion_high / np.sum(Pxx_diffusion_high)
-
-            mae_diff_unet.append(np.mean(np.abs(Pxx_gt_high_norm - Pxx_unet_high_norm)))
-            mae_diff_diffusion.append(np.mean(np.abs(Pxx_gt_high_norm - Pxx_diffusion_high_norm)))
+            mae_diff_unet.append(np.mean(np.abs(Pxx_gt_high - Pxx_unet_high)))
+            mae_diff_diffusion.append(np.mean(np.abs(Pxx_gt_high - Pxx_diffusion_high)))
 
         avg_mae_diff_unet.append(np.mean(mae_diff_unet))
         avg_mae_diff_diffusion.append(np.mean(mae_diff_diffusion))
@@ -219,12 +214,12 @@ def save_frequency_domain_analysis(metrics, last_epoch, save_dir, high_freq_thre
     plt.plot(unique_noise_levels, avg_mae_diff_unet, 'o-', label='UNet Model', color='purple')
     plt.plot(unique_noise_levels, avg_mae_diff_diffusion, 'o-', label=f'Diffusion Model (Epoch {last_epoch})', color='green')
     plt.xlabel('Noise Standard Deviation')
-    plt.ylabel('Normalized MAE in High-Frequency Domain')
-    plt.title('Normalized MAE in High-Frequency Domain Analysis')
+    plt.ylabel('MAE in High-Frequency Domain')
+    plt.title('MAE in High-Frequency Domain Analysis')
     plt.legend()
     plt.grid()
     plt.tight_layout()
-    plt.savefig(os.path.join(save_dir, 'normalized_high_frequency_domain_analysis.png'))
+    plt.savefig(os.path.join(save_dir, 'high_frequency_domain_analysis.png'))
     plt.close()
 
 def save_frequency_domain_analysis_multiple_epochs(metrics, epochs, save_dir, high_freq_threshold=0.5):
