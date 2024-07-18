@@ -78,7 +78,8 @@ def evaluate_model(model, dataloader, device):
     return avg_psnr, avg_ssim, avg_inference_time, sample_images
 
 def denormalize(img):
-    return (img + 1) / 2  # Convert from [-1, 1] to [0, 1]
+    img = (img + 1) / 2  # Convert from [-1, 1] to [0, 1]
+    return np.clip(img, 0, 1)  # Clamp values to the range [0, 1]
 
 def plot_sample_images(sample_images):
     fig, axs = plt.subplots(len(sample_images), 3, figsize=(15, 5 * len(sample_images)))
@@ -122,7 +123,7 @@ def main():
     model.to(device)
 
     # Load the model checkpoint
-    checkpoint_path = 'checkpoints/diffusion_RDUnet_model_checkpointed_epoch_34.pth'  # Adjust path as needed
+    checkpoint_path = 'checkpoints/diffusion_RDUnet_model_checkpointed_epoch_40.pth'  # Adjust path as needed
     checkpoint = torch.load(checkpoint_path, map_location=device)
     model.load_state_dict(checkpoint['model_state_dict'])  # Only load the model parameters
 
