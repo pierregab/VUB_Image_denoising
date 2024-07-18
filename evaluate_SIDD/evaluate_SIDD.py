@@ -4,7 +4,7 @@ import scipy.io
 from skimage.metrics import peak_signal_noise_ratio, structural_similarity
 import torch
 import torchvision.transforms as transforms
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import DataLoader, Dataset, Subset
 import time
 import sys
 import pandas as pd
@@ -77,18 +77,21 @@ def evaluate_model(model, dataloader, device):
 
     return avg_psnr, avg_ssim, avg_inference_time, sample_images
 
+def denormalize(img):
+    return (img + 1) / 2  # Convert from [-1, 1] to [0, 1]
+
 def plot_sample_images(sample_images):
     fig, axs = plt.subplots(len(sample_images), 3, figsize=(15, 5 * len(sample_images)))
     for i, (noisy, gt, output) in enumerate(sample_images):
-        axs[i, 0].imshow(noisy)
+        axs[i, 0].imshow(denormalize(noisy))
         axs[i, 0].set_title('Noisy')
         axs[i, 0].axis('off')
 
-        axs[i, 1].imshow(gt)
+        axs[i, 1].imshow(denormalize(gt))
         axs[i, 1].set_title('Ground Truth')
         axs[i, 1].axis('off')
 
-        axs[i, 2].imshow(output)
+        axs[i, 2].imshow(denormalize(output))
         axs[i, 2].set_title('Denoised')
         axs[i, 2].axis('off')
 
@@ -102,7 +105,14 @@ def main():
 
     # Initialize dataset and dataloader
     dataset = SIDDMatDataset(noisy_mat_file, gt_mat_file)
-    dataloader = DataLoader(dataset, batch_size=1, shuffle=False, num_workers=4)
+
+    # Select a percentage of the dataset for evaluation
+    evaluation_percentage = 0.1  # Change this to use a different percentage of the dataset
+    dataset_size = len(dataset)
+    indices = np.random.choice(dataset_size, int(dataset_size * evaluation_percentage), replace=False)
+    subset_dataset = Subset(dataset, indices)
+
+    dataloader = DataLoader(subset_dataset, batch_size=1, shuffle=False, num_workers=4)
 
     # Load your model
     base_filters = 32
