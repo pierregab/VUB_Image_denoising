@@ -287,7 +287,7 @@ def train_model_checkpointed(model, train_loader, val_loader, optimizer, schedul
             val_noisy_images, val_clean_images = val_noisy_images.to(device), val_clean_images.to(device)
 
             # Generate denoised images using only the noisy images
-            denoised_images = model.improved_sampling(val_noisy_images)
+            denoised_images = model.direct_sampling(val_noisy_images)
             
             # Calculate validation loss
             validation_loss = combined_loss(denoised_images, val_clean_images)

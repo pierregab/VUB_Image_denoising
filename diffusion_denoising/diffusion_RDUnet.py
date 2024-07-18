@@ -1,3 +1,4 @@
+import argparse
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -16,7 +17,8 @@ import pytorch_msssim
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 sys.path.append(project_root)
 
-from dataset_creation.data_loader import load_data
+from dataset_creation.data_loader import load_data as load_div2k_data
+from dataset_creation.SIDD_dataset import load_data as load_sidd_data  # Assuming your new SIDD data loader script is named SIDD_dataset.py
 
 # Set device
 device = torch.device("cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu")
@@ -224,12 +226,6 @@ def combined_loss(pred, target, mse_weight=0, charbonnier_weight=1, ssim_weight=
 
     return mse_weight * mse_loss + charbonnier_weight * charbonnier + ssim_weight * ssim_loss
 
-# Define the checkpointed model and optimizer
-unet_checkpointed = RDUNet_T(base_filters=32).to(device)
-model_checkpointed = DiffusionModel(unet_checkpointed).to(device)
-optimizer = optim.Adam(model_checkpointed.parameters(), lr=2e-4, betas=(0.9, 0.999))
-scheduler = CosineAnnealingLR(optimizer, T_max=10)
-
 def denormalize(tensor):
     return tensor * 0.5 + 0.5
 
@@ -360,6 +356,20 @@ def start_tensorboard(log_dir):
 
 if __name__ == "__main__":
     try:
+        # Configuration block for setting parameters
+        dataset_choice = 'SIDD'  # Set 'DIV2K' or 'SIDD'
+        image_folder = 'DIV2K_train_HR.nosync' if dataset_choice == 'DIV2K' else 'SIDD_dataset.nosync/SIDD_medium_Srgb'
+        checkpoint_path = None  # Set to checkpoint file path if resuming from checkpoint
+        # os.path.join("checkpoints", "diffusion_RDUnet_model_checkpointed_epoch_89.pth")
+        num_epochs = 300
+        batch_size = 8
+        num_workers = 8
+        validation_split = 0.2
+        augment = False
+        dataset_percentage = 0.1
+        base_filters = 32
+        timesteps = 20
+
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
         if torch.backends.mps.is_available():
@@ -369,14 +379,27 @@ if __name__ == "__main__":
         writer = SummaryWriter(log_dir=log_dir)
         start_tensorboard(log_dir)
         
-        image_folder = 'DIV2K_train_HR.nosync'
-        train_loader, val_loader = load_data(image_folder, batch_size=4, augment=False, dataset_percentage=0.01, validation_split=0.1, use_rgb=True, num_workers=8)
+        # Load data based on the selected dataset
+        if dataset_choice == 'DIV2K':
+            train_loader, val_loader = load_div2k_data(image_folder, batch_size=batch_size, augment=augment, dataset_percentage=dataset_percentage, validation_split=validation_split, use_rgb=True, num_workers=num_workers)
+        elif dataset_choice == 'SIDD':
+            train_loader, val_loader = load_sidd_data(image_folder, batch_size=batch_size, augment=augment, dataset_percentage=dataset_percentage, validation_split=validation_split, use_rgb=True, num_workers=num_workers)
         
-        # Load checkpoint if exists
-        checkpoint_path = os.path.join("checkpoints", "diffusion_RDUnet_model_checkpointed_epoch_89.pth")
-        start_epoch = load_checkpoint(model_checkpointed, optimizer, scheduler, checkpoint_path)
+        # Initialize the model with the configured parameters
+        unet_checkpointed = RDUNet_T(base_filters=base_filters).to(device)
+        model_checkpointed = DiffusionModel(unet_checkpointed, timesteps=timesteps).to(device)
         
-        train_model_checkpointed(model_checkpointed, train_loader, val_loader, optimizer, scheduler, writer, num_epochs=300, start_epoch=start_epoch)
+        # Define the optimizer and scheduler
+        optimizer = optim.Adam(model_checkpointed.parameters(), lr=2e-4, betas=(0.9, 0.999))
+        scheduler = CosineAnnealingLR(optimizer, T_max=10)
+        
+        # Load checkpoint if provided
+        if checkpoint_path:
+            start_epoch = load_checkpoint(model_checkpointed, optimizer, scheduler, checkpoint_path)
+        else:
+            start_epoch = 0
+        
+        train_model_checkpointed(model_checkpointed, train_loader, val_loader, optimizer, scheduler, writer, num_epochs=num_epochs, start_epoch=start_epoch)
         writer.close()
     except Exception as e:
         print(f"An error occurred: {e}")
