@@ -358,7 +358,7 @@ if __name__ == "__main__":
     try:
         # Configuration block for setting parameters
         dataset_choice = 'SIDD'  # Set 'DIV2K' or 'SIDD'
-        image_folder = 'DIV2K_train_HR.nosync' if dataset_choice == 'DIV2K' else 'SIDD_dataset.nosync/SIDD_medium_Srgb'
+        image_folder = 'DIV2K_train_HR.nosync' if dataset_choice == 'DIV2K' else 'SIDD_dataset.nosync/SIDD_Medium_Srgb'
         checkpoint_path = None  # Set to checkpoint file path if resuming from checkpoint
         # os.path.join("checkpoints", "diffusion_RDUnet_model_checkpointed_epoch_89.pth")
         num_epochs = 300
