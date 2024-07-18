@@ -60,8 +60,8 @@ def evaluate_model(model, dataloader, device):
             gt = gt.cpu().numpy().squeeze().transpose(1, 2, 0)  # Convert from CHW to HWC format
             noisy = noisy.cpu().numpy().squeeze().transpose(1, 2, 0)  # Convert from CHW to HWC format
 
-            psnr_value = peak_signal_noise_ratio(gt, output, data_range=1)
-            ssim_value = structural_similarity(gt, output, data_range=1, multichannel=True, channel_axis=-1)
+            psnr_value = peak_signal_noise_ratio(gt, output, data_range=2)
+            ssim_value = structural_similarity(gt, output, data_range=2, multichannel=True, channel_axis=-1)
 
             psnr_values.append(psnr_value)
             ssim_values.append(ssim_value)
