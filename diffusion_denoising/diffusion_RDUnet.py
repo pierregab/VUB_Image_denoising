@@ -13,7 +13,6 @@ import torch.utils.checkpoint as cp
 from torch.optim.lr_scheduler import CosineAnnealingLR
 import pytorch_msssim
 
-# Assuming your script is in RCA_GAN and the project root is one level up
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 sys.path.append(project_root)
 
@@ -149,7 +148,8 @@ class RDUNet_T(nn.Module):
 
         self.output_block = OutputBlock(filters_0, 3)
 
-        self.apply(init_weights())  # Apply the weight initialization
+        # Apply weight initialization
+        self.apply(init_weights()) 
 
     def forward(self, inputs, t):
         # Concatenate the time step with the input image
@@ -333,7 +333,7 @@ def train_model_checkpointed(model, train_loader, val_loader, optimizer, schedul
 
 
 def load_checkpoint(model, optimizer, scheduler, checkpoint_path):
-    if os.path.isfile(checkpoint_path):
+    if (checkpoint_path is not None) and os.path.isfile(checkpoint_path):
         print(f"Loading checkpoint '{checkpoint_path}'")
         # load on cuda or mps device
         checkpoint = torch.load(checkpoint_path, map_location=device)
@@ -389,15 +389,15 @@ if __name__ == "__main__":
         unet_checkpointed = RDUNet_T(base_filters=base_filters).to(device)
         model_checkpointed = DiffusionModel(unet_checkpointed, timesteps=timesteps).to(device)
         
+        # Apply weight initialization
+        unet_checkpointed.apply(init_weights())
+        
         # Define the optimizer and scheduler
         optimizer = optim.Adam(model_checkpointed.parameters(), lr=2e-4, betas=(0.9, 0.999))
         scheduler = CosineAnnealingLR(optimizer, T_max=10)
         
         # Load checkpoint if provided
-        if checkpoint_path:
-            start_epoch = load_checkpoint(model_checkpointed, optimizer, scheduler, checkpoint_path)
-        else:
-            start_epoch = 0
+        start_epoch = load_checkpoint(model_checkpointed, optimizer, scheduler, checkpoint_path)
         
         train_model_checkpointed(model_checkpointed, train_loader, val_loader, optimizer, scheduler, writer, num_epochs=num_epochs, start_epoch=start_epoch)
         writer.close()

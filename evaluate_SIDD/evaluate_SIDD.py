@@ -13,7 +13,7 @@ from tqdm import tqdm
 
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 sys.path.append(project_root)
-from RCA_GAN.paper_gan import Generator  # Ensure your Generator class is correctly imported
+from diffusion_denoising.diffusion_RDUnet import RDUNet_T, DiffusionModel  # Ensure your diffusion model script is correctly imported
 
 class SIDDMatDataset(Dataset):
     def __init__(self, noisy_mat_file, gt_mat_file):
@@ -58,10 +58,10 @@ def evaluate_model(model, dataloader, device):
             gt = gt.to(device)
 
             start_time = time.time()
-            output, _ = model(noisy)
+            denoised = model.improved_sampling(noisy)  # Adjusted for the diffusion model
             inference_time = (time.time() - start_time) * 1000  # Convert to milliseconds
 
-            output = output.cpu().numpy().squeeze()
+            output = denoised.cpu().numpy().squeeze()
             gt = gt.cpu().numpy().squeeze()
             noisy = noisy.cpu().numpy().squeeze()
 
@@ -110,9 +110,10 @@ def main():
     dataloader = DataLoader(dataset, batch_size=1, shuffle=False, num_workers=4)
 
     # Load your model
-    conv_block_channels = [32, 16, 8, 4]
-    model = Generator(in_channels=1, out_channels=1, conv_block_channels=conv_block_channels)  # Adjust in_channels and out_channels for single-channel input
-    model.load_state_dict(torch.load('runs/paper_gan/generator_epoch_20.pth'))
+    base_filters = 32
+    timesteps = 20
+    model = DiffusionModel(RDUNet_T(base_filters=base_filters), timesteps=timesteps)
+    model.load_state_dict(torch.load('checkpoints/'))  # Adjust path as needed
     device = torch.device('cuda' if torch.cuda.is_available() else 'mps')
     model.to(device)
 
