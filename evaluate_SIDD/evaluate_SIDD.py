@@ -24,7 +24,6 @@ class SIDDMatDataset(Dataset):
             transforms.ToTensor(),
             transforms.Normalize(mean=[0.5], std=[0.5])
         ])
-        self.to_grayscale = transforms.Grayscale(num_output_channels=1)
 
     def __len__(self):
         return self.noisy_data.shape[0] * self.noisy_data.shape[1]
@@ -38,10 +37,6 @@ class SIDDMatDataset(Dataset):
 
         noisy_patch = self.transform(noisy_patch)
         gt_patch = self.transform(gt_patch)
-
-        # Convert to grayscale
-        noisy_patch = self.to_grayscale(noisy_patch)
-        gt_patch = self.to_grayscale(gt_patch)
 
         return noisy_patch, gt_patch
 
@@ -61,12 +56,12 @@ def evaluate_model(model, dataloader, device):
             denoised = model.improved_sampling(noisy)  # Adjusted for the diffusion model
             inference_time = (time.time() - start_time) * 1000  # Convert to milliseconds
 
-            output = denoised.cpu().numpy().squeeze()
-            gt = gt.cpu().numpy().squeeze()
-            noisy = noisy.cpu().numpy().squeeze()
+            output = denoised.cpu().numpy().squeeze().transpose(1, 2, 0)  # Convert from CHW to HWC format
+            gt = gt.cpu().numpy().squeeze().transpose(1, 2, 0)  # Convert from CHW to HWC format
+            noisy = noisy.cpu().numpy().squeeze().transpose(1, 2, 0)  # Convert from CHW to HWC format
 
             psnr_value = peak_signal_noise_ratio(gt, output, data_range=1)
-            ssim_value = structural_similarity(gt, output, data_range=1)
+            ssim_value = structural_similarity(gt, output, data_range=1, multichannel=True)
 
             psnr_values.append(psnr_value)
             ssim_values.append(ssim_value)
@@ -85,15 +80,15 @@ def evaluate_model(model, dataloader, device):
 def plot_sample_images(sample_images):
     fig, axs = plt.subplots(len(sample_images), 3, figsize=(15, 5 * len(sample_images)))
     for i, (noisy, gt, output) in enumerate(sample_images):
-        axs[i, 0].imshow(noisy, cmap='gray')
+        axs[i, 0].imshow(noisy)
         axs[i, 0].set_title('Noisy')
         axs[i, 0].axis('off')
 
-        axs[i, 1].imshow(gt, cmap='gray')
+        axs[i, 1].imshow(gt)
         axs[i, 1].set_title('Ground Truth')
         axs[i, 1].axis('off')
 
-        axs[i, 2].imshow(output, cmap='gray')
+        axs[i, 2].imshow(output)
         axs[i, 2].set_title('Denoised')
         axs[i, 2].axis('off')
 
