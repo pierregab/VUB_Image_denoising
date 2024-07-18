@@ -113,9 +113,13 @@ def main():
     base_filters = 32
     timesteps = 20
     model = DiffusionModel(RDUNet_T(base_filters=base_filters), timesteps=timesteps)
-    model.load_state_dict(torch.load('checkpoints/'))  # Adjust path as needed
     device = torch.device('cuda' if torch.cuda.is_available() else 'mps')
     model.to(device)
+
+    # Load the model checkpoint
+    checkpoint_path = 'checkpoints/diffusion_RDUnet_model_checkpointed_epoch_22.pth'  # Adjust path as needed
+    checkpoint = torch.load(checkpoint_path, map_location=device)
+    model.load_state_dict(checkpoint['model_state_dict'])  # Only load the model parameters
 
     # Evaluate the model
     avg_psnr, avg_ssim, avg_inference_time, sample_images = evaluate_model(model, dataloader, device)
