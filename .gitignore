@@ -10,3 +10,4 @@ evaluate_SIDD/BenchmarkNoisyBlocksSrgb.mat
 checkpoints/
 runs/
 SIDD_dataset.nosync/
+pretrained_diffusion/pre-trained/256x256_diffusion_uncond.pt
