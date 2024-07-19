@@ -27,7 +27,7 @@ def evaluate_model(model, val_loader):
     
     return avg_psnr
 
-def objective(trial):
+def objective(trial, train_loader, val_loader):
     # Define hyperparameter search space
     args = argparse.Namespace()
     args.dataset_choice = 'SIDD'
@@ -50,9 +50,6 @@ def objective(trial):
         args.lr = trial.suggest_loguniform('lr', 1e-5, 1e-3)
         args.weight_decay = trial.suggest_loguniform('weight_decay', 1e-5, 1e-3)
 
-    # Load data
-    train_loader, val_loader = load_data(args)
-
     # Train the model
     train(args, train_loader, val_loader)
 
@@ -66,8 +63,19 @@ def objective(trial):
     return -avg_psnr  # Optuna minimizes the objective, so return negative PSNR
 
 if __name__ == "__main__":
+    # Load data once and reuse the same loaders for each trial
+    args = argparse.Namespace()
+    args.dataset_choice = 'SIDD'
+    args.batch_size = 8
+    args.num_workers = 8
+    args.validation_split = 0.2
+    args.augment = True
+    args.dataset_percentage = 0.1
+
+    train_loader, val_loader = load_data(args)
+
     study = optuna.create_study(direction='minimize')
-    study.optimize(objective, n_trials=50)
+    study.optimize(lambda trial: objective(trial, train_loader, val_loader), n_trials=50)
 
     print(f"Best trial: {study.best_trial.value}")
     print("Best hyperparameters: ")
