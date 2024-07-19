@@ -82,7 +82,7 @@ if __name__ == "__main__":
     # Load data once and reuse the same loaders for each trial
     args = argparse.Namespace()
     args.dataset_choice = 'SIDD'
-    args.batch_size = 8
+    args.batch_size = 4
     args.num_workers = 8
     args.validation_split = 0.2
     args.augment = True
