@@ -2,9 +2,7 @@ import optuna
 import torch
 import argparse
 import os
-from torchvision.transforms import ToTensor
-from PIL import Image
-from diffusion_RDUnet import train, DiffusionModel, RDUNet_T, denormalize, load_checkpoint
+from diffusion_RDUnet import train, DiffusionModel, RDUNet_T, denormalize, load_data
 
 device = torch.device("cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu")
 
@@ -15,55 +13,24 @@ def calculate_psnr(img1, img2):
     psnr = 20 * torch.log10(1.0 / torch.sqrt(mse))
     return psnr
 
-def extract_patch(img, top, left, patch_size=256):
-    return img.crop((left, top, left + patch_size, top + patch_size))
-
-def load_validation_patches(patch_dir, patch_size=256, num_patches=12):
-    patches = []
-    for img_file in sorted(os.listdir(patch_dir))[:num_patches]:  # Ensure we always use the same 12 patches
-        if img_file.endswith('.png'):
-            img_path = os.path.join(patch_dir, img_file)
-            img = Image.open(img_path).convert('RGB')
-            width, height = img.size
-
-            # Ensure the coordinates are consistent for each image
-            top = height // 4
-            left = width // 4
-            patch = extract_patch(img, top, left, patch_size)
-            patch = ToTensor()(patch).unsqueeze(0)  # Add batch dimension
-            patches.append(patch)
-    patches = torch.cat(patches, dim=0)
-    return patches
-
-def evaluate_model(model_path, patch_dir, base_filters, timesteps):
-    # Load model
-    unet_checkpointed = RDUNet_T(base_filters=base_filters).to(device)
-    model_checkpointed = DiffusionModel(unet_checkpointed, timesteps=timesteps).to(device)
-    model_checkpointed.load_state_dict(torch.load(model_path, map_location=device))
-    model_checkpointed.eval()
-
-    # Load validation patches
-    validation_patches = load_validation_patches(patch_dir)
-
-    # Perform denoising and calculate PSNR
-    psnr_values = []
+def evaluate_model(model, val_loader):
+    model.eval()
+    val_noisy_images, val_clean_images = next(iter(val_loader))
+    val_noisy_images, val_clean_images = val_noisy_images.to(device), val_clean_images.to(device)
     with torch.no_grad():
-        for patch in validation_patches:
-            noisy_patch = patch.to(device)
-            clean_patch = patch.to(device)  # In a real scenario, you should have the corresponding clean patches
-            denoised_patch = model_checkpointed.improved_sampling(noisy_patch)
-            denoised_patch = denormalize(denoised_patch.cpu())
-            clean_patch = denormalize(clean_patch.cpu())
-            psnr = calculate_psnr(denoised_patch, clean_patch)
-            psnr_values.append(psnr)
+        denoised_images = model.improved_sampling(val_noisy_images)
+        denoised_images = denormalize(denoised_images.cpu())
+        val_clean_images = denormalize(val_clean_images.cpu())
+
+        psnr_values = [calculate_psnr(denoised_images[i], val_clean_images[i]) for i in range(len(denoised_images))]
+        avg_psnr = sum(psnr_values) / len(psnr_values)
     
-    avg_psnr = sum(psnr_values) / len(psnr_values)
     return avg_psnr
 
 def objective(trial):
     # Define hyperparameter search space
     args = argparse.Namespace()
-    args.dataset_choice = 'SIDD'
+    args.dataset_choice = trial.suggest_categorical('dataset_choice', ['DIV2K', 'SIDD'])
     args.checkpoint_path = None
     args.num_epochs = 5
     args.batch_size = 8
@@ -83,14 +50,19 @@ def objective(trial):
         args.lr = trial.suggest_loguniform('lr', 1e-5, 1e-3)
         args.weight_decay = trial.suggest_loguniform('weight_decay', 1e-5, 1e-3)
 
-    # Call the train function with the suggested hyperparameters and get validation loss
-    train(args)
+    # Load data
+    train_loader, val_loader = load_data(args)
+
+    # Train the model
+    train(args, train_loader, val_loader)
 
     # Evaluate model using PSNR on validation patches
     model_path = os.path.join(args.output_dir, "diffusion_RDUNet_model_checkpointed_final.pth")
-    patch_dir = 'dataset/DIV2K_valid_HR.nosync'
-    avg_psnr = evaluate_model(model_path, patch_dir, args.base_filters, args.timesteps)
+    unet_checkpointed = RDUNet_T(base_filters=args.base_filters).to(device)
+    model_checkpointed = DiffusionModel(unet_checkpointed, timesteps=args.timesteps).to(device)
+    model_checkpointed.load_state_dict(torch.load(model_path, map_location=device))
 
+    avg_psnr = evaluate_model(model_checkpointed, val_loader)
     return -avg_psnr  # Optuna minimizes the objective, so return negative PSNR
 
 if __name__ == "__main__":

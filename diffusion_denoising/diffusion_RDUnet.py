@@ -19,7 +19,9 @@ from dataset_creation.data_loader import load_data as load_div2k_data
 from dataset_creation.SIDD_dataset import load_data as load_sidd_data  # Assuming your new SIDD data loader script is named SIDD_dataset.py
 
 # Set device
-device = torch.device("cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu")
+device = torch.device("cuda" if torch.cuda.is_available() 
+                      else "mps" if torch.backends.mps.is_available() 
+                      else "cpu")
 
 class DiffusionModel(nn.Module):
     def __init__(self, unet, timesteps=20):
@@ -205,7 +207,15 @@ def display_training_parameters(args):
     print(f"Output Directory: {args.output_dir}")
     print("\n")
 
-def train(args):
+def load_data(args):
+    if args.dataset_choice == 'DIV2K':
+        image_folder = 'dataset/DIV2K_train_HR.nosync'
+        return load_div2k_data(image_folder, batch_size=args.batch_size, augment=args.augment, dataset_percentage=args.dataset_percentage, validation_split=args.validation_split, use_rgb=True, num_workers=args.num_workers)
+    elif args.dataset_choice == 'SIDD':
+        image_folder = 'dataset/SIDD_dataset.nosync/SIDD_Medium_Srgb'
+        return load_sidd_data(image_folder, batch_size=args.batch_size, augment=args.augment, dataset_percentage=args.dataset_percentage, validation_split=args.validation_split, use_rgb=True, num_workers=args.num_workers)
+
+def train(args, train_loader=None, val_loader=None):
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
     if torch.backends.mps.is_available():
@@ -227,13 +237,9 @@ def train(args):
     writer = SummaryWriter(log_dir=log_dir)
     start_tensorboard(log_dir)
 
-    image_folder = 'dataset/DIV2K_train_HR.nosync' if args.dataset_choice == 'DIV2K' else 'dataset/SIDD_dataset.nosync/SIDD_Medium_Srgb'
-    
-    # Load data based on the selected dataset
-    if args.dataset_choice == 'DIV2K':
-        train_loader, val_loader = load_div2k_data(image_folder, batch_size=args.batch_size, augment=args.augment, dataset_percentage=args.dataset_percentage, validation_split=args.validation_split, use_rgb=True, num_workers=args.num_workers)
-    elif args.dataset_choice == 'SIDD':
-        train_loader, val_loader = load_sidd_data(image_folder, batch_size=args.batch_size, augment=args.augment, dataset_percentage=args.dataset_percentage, validation_split=args.validation_split, use_rgb=True, num_workers=args.num_workers)
+    # Load data if not provided
+    if train_loader is None or val_loader is None:
+        train_loader, val_loader = load_data(args)
     
     # Initialize the model with the configured parameters
     unet_checkpointed = RDUNet_T(base_filters=args.base_filters).to(device)
@@ -281,6 +287,7 @@ if __name__ == "__main__":
         parser.add_argument('--optimizer_choice', type=str, default='adamw', choices=['adam', 'adamw'], help="Choice of optimizer (adam or adamw)")
         parser.add_argument('--scheduler_choice', type=str, default='step', choices=['cosine', 'step'])
         parser.add_argument('--output_dir', type=str, default='checkpoints', help="Directory to save checkpoints and final models")
+        parser.add_argument('--lr', type=float, default=1e-4, help="Learning rate")
 
         args = parser.parse_args()
         train(args)
