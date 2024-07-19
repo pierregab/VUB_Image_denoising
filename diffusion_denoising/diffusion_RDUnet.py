@@ -103,7 +103,7 @@ def train_step_checkpointed(model, clean_images, noisy_images, optimizer, accumu
     
     return loss.item()
 
-def train_model_checkpointed(model, train_loader, val_loader, optimizer, scheduler, writer, num_epochs=10, start_epoch=0, accumulation_steps=4, clip_value=1.0):
+def train_model_checkpointed(model, train_loader, val_loader, optimizer, scheduler, writer, output_dir, num_epochs=10, start_epoch=0, accumulation_steps=4, clip_value=1.0):
     for epoch in range(start_epoch, num_epochs):
         # Training phase
         model.train()
@@ -156,7 +156,7 @@ def train_model_checkpointed(model, train_loader, val_loader, optimizer, schedul
         scheduler.step()
 
         # Save the model checkpoint after each epoch
-        checkpoint_path = os.path.join("checkpoints", f"diffusion_RDUNet_model_checkpointed_epoch_{epoch + 1}.pth")
+        checkpoint_path = os.path.join(output_dir, f"diffusion_RDUNet_model_checkpointed_epoch_{epoch + 1}.pth")
         os.makedirs(os.path.dirname(checkpoint_path), exist_ok=True)
         torch.save({
             'epoch': epoch + 1,
@@ -202,7 +202,67 @@ def display_training_parameters(args):
     print(f"Timesteps: {args.timesteps}")
     print(f"Optimizer Choice: {args.optimizer_choice}")
     print(f"Scheduler Choice: {args.scheduler_choice}")
+    print(f"Output Directory: {args.output_dir}")
     print("\n")
+
+def train(args):
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+    if torch.backends.mps.is_available():
+        torch.mps.empty_cache()
+
+    ascii_art = """
+    ██    ██ ██    ██ ██████       █████  ██     ██       █████  ██████  
+    ██    ██ ██    ██ ██   ██     ██   ██ ██     ██      ██   ██ ██   ██ 
+    ██    ██ ██    ██ ██████      ███████ ██     ██      ███████ ██████  
+     ██  ██  ██    ██ ██   ██     ██   ██ ██     ██      ██   ██ ██   ██ 
+      ████    ██████  ██████      ██   ██ ██     ███████ ██   ██ ██████  
+                                                                       
+    """
+    print(ascii_art)
+
+    display_training_parameters(args)
+
+    log_dir = os.path.join("runs", "diffusion_checkpointed", os.path.basename(args.output_dir))
+    writer = SummaryWriter(log_dir=log_dir)
+    start_tensorboard(log_dir)
+
+    image_folder = 'dataset/DIV2K_train_HR.nosync' if args.dataset_choice == 'DIV2K' else 'dataset/SIDD_dataset.nosync/SIDD_Medium_Srgb'
+    
+    # Load data based on the selected dataset
+    if args.dataset_choice == 'DIV2K':
+        train_loader, val_loader = load_div2k_data(image_folder, batch_size=args.batch_size, augment=args.augment, dataset_percentage=args.dataset_percentage, validation_split=args.validation_split, use_rgb=True, num_workers=args.num_workers)
+    elif args.dataset_choice == 'SIDD':
+        train_loader, val_loader = load_sidd_data(image_folder, batch_size=args.batch_size, augment=args.augment, dataset_percentage=args.dataset_percentage, validation_split=args.validation_split, use_rgb=True, num_workers=args.num_workers)
+    
+    # Initialize the model with the configured parameters
+    unet_checkpointed = RDUNet_T(base_filters=args.base_filters).to(device)
+    model_checkpointed = DiffusionModel(unet_checkpointed, timesteps=args.timesteps).to(device)
+    
+    # Apply weight initialization
+    unet_checkpointed.apply(init_weights())
+    
+    # Define the optimizer
+    if args.optimizer_choice == 'adam':
+        optimizer = optim.Adam(model_checkpointed.parameters(), lr=args.lr, betas=(0.9, 0.999))
+        scheduler = CosineAnnealingLR(optimizer, T_max=10)  # Default scheduler
+    elif args.optimizer_choice == 'adamw':
+        optimizer = optim.AdamW(model_checkpointed.parameters(), lr=args.lr, weight_decay=args.weight_decay)
+        scheduler_step = 3
+        scheduler_gamma = 0.5
+        scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=scheduler_step, gamma=scheduler_gamma)
+
+    # Load checkpoint if provided
+    start_epoch = load_checkpoint(model_checkpointed, optimizer, scheduler, args.checkpoint_path)
+    
+    train_model_checkpointed(model_checkpointed, train_loader, val_loader, optimizer, scheduler, writer, args.output_dir, num_epochs=args.num_epochs, start_epoch=start_epoch)
+    
+    # Save final model
+    final_model_path = os.path.join(args.output_dir, "diffusion_RDUNet_model_checkpointed_final.pth")
+    torch.save(model_checkpointed.state_dict(), final_model_path)
+    print(f"Final model saved at {final_model_path}")
+
+    writer.close()
 
 if __name__ == "__main__":
     try:
@@ -219,60 +279,11 @@ if __name__ == "__main__":
         parser.add_argument('--base_filters', type=int, default=32, help="Base number of filters for the model")
         parser.add_argument('--timesteps', type=int, default=20, help="Number of timesteps for the diffusion model")
         parser.add_argument('--optimizer_choice', type=str, default='adamw', choices=['adam', 'adamw'], help="Choice of optimizer (adam or adamw)")
-        parser.add_argument('--scheduler_choice', type=str, default='step', choices=['cosine', 'step'], help="Choice of scheduler (cosine or step)")
-        
+        parser.add_argument('--scheduler_choice', type=str, default='step', choices=['cosine', 'step'])
+        parser.add_argument('--output_dir', type=str, default='checkpoints', help="Directory to save checkpoints and final models")
+
         args = parser.parse_args()
+        train(args)
 
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-        if torch.backends.mps.is_available():
-            torch.mps.empty_cache()
-
-        ascii_art = """
-        ██    ██ ██    ██ ██████       █████  ██     ██       █████  ██████  
-        ██    ██ ██    ██ ██   ██     ██   ██ ██     ██      ██   ██ ██   ██ 
-        ██    ██ ██    ██ ██████      ███████ ██     ██      ███████ ██████  
-         ██  ██  ██    ██ ██   ██     ██   ██ ██     ██      ██   ██ ██   ██ 
-          ████    ██████  ██████      ██   ██ ██     ███████ ██   ██ ██████  
-                                                                           
-        """
-        print(ascii_art)
-
-        display_training_parameters(args)
-
-        log_dir = os.path.join("runs", "diffusion_checkpointed")
-        writer = SummaryWriter(log_dir=log_dir)
-        start_tensorboard(log_dir)
-
-        image_folder = 'DIV2K_train_HR.nosync' if args.dataset_choice == 'DIV2K' else 'SIDD_dataset.nosync/SIDD_Medium_Srgb'
-        
-        # Load data based on the selected dataset
-        if args.dataset_choice == 'DIV2K':
-            train_loader, val_loader = load_div2k_data(image_folder, batch_size=args.batch_size, augment=args.augment, dataset_percentage=args.dataset_percentage, validation_split=args.validation_split, use_rgb=True, num_workers=args.num_workers)
-        elif args.dataset_choice == 'SIDD':
-            train_loader, val_loader = load_sidd_data(image_folder, batch_size=args.batch_size, augment=args.augment, dataset_percentage=args.dataset_percentage, validation_split=args.validation_split, use_rgb=True, num_workers=args.num_workers)
-        
-        # Initialize the model with the configured parameters
-        unet_checkpointed = RDUNet_T(base_filters=args.base_filters).to(device)
-        model_checkpointed = DiffusionModel(unet_checkpointed, timesteps=args.timesteps).to(device)
-        
-        # Apply weight initialization
-        unet_checkpointed.apply(init_weights())
-        
-        # Define the optimizer
-        if args.optimizer_choice == 'adam':
-            optimizer = optim.Adam(model_checkpointed.parameters(), lr=2e-4, betas=(0.9, 0.999))
-            scheduler = CosineAnnealingLR(optimizer, T_max=10)  # Default scheduler
-        elif args.optimizer_choice == 'adamw':
-            optimizer = optim.AdamW(model_checkpointed.parameters(), lr=1e-4, weight_decay=1e-5)
-            scheduler_step = 3
-            scheduler_gamma = 0.5
-            scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=scheduler_step, gamma=scheduler_gamma)
-
-        # Load checkpoint if provided
-        start_epoch = load_checkpoint(model_checkpointed, optimizer, scheduler, args.checkpoint_path)
-        
-        train_model_checkpointed(model_checkpointed, train_loader, val_loader, optimizer, scheduler, writer, num_epochs=args.num_epochs, start_epoch=start_epoch)
-        writer.close()
     except Exception as e:
         print(f"An error occurred: {e}")

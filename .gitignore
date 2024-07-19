@@ -1,6 +1,6 @@
-DIV2K_train_HR.nosync/
-DIV2K_valid_HR.nosync/
-astro_dataset.nosync/
+dataset/DIV2K_train_HR.nosync/
+dataset/DIV2K_valid_HR.nosync/
+dataset/astro_dataset.nosync/
 evaluate_SIDD/ValidationNoisyBlocksSrgb.mat
 evaluate_SIDD/ValidationGtBlocksSrgb.mat
 evaluate_SIDD/ValidationGtBlocksRaw.mat
@@ -9,5 +9,5 @@ evaluate_SIDD/BenchmarkBlocks32.mat
 evaluate_SIDD/BenchmarkNoisyBlocksSrgb.mat
 checkpoints/
 runs/
-SIDD_dataset.nosync/
+dataset/SIDD_dataset.nosync/
 pretrained_diffusion/pre-trained/256x256_diffusion_uncond.pt

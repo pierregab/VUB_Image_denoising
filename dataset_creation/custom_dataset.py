@@ -86,9 +86,9 @@ class CustomDataset(Dataset):
         if self.transform:
             # Ensure the same random seed for both transformations
             seed = random.randint(0, 2**32)
-            random.seed(seed)
+            torch.manual_seed(seed)
             gt_patch = self.transform(gt_patch)
-            random.seed(seed)
+            torch.manual_seed(seed)
             noisy_patch = self.transform(noisy_patch)
 
         if self.include_noise_level:
