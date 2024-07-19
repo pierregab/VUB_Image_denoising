@@ -89,9 +89,9 @@ class CustomSIDD_Dataset(Dataset):
         if self.transform:
             # Ensure the same random seed for both transformations
             seed = random.randint(0, 2**32)
-            random.seed(seed)
+            torch.manual_seed(seed)
             noisy_patch = self.transform(noisy_patch)
-            random.seed(seed)
+            torch.manual_seed(seed)
             gt_patch = self.transform(gt_patch)
 
         return noisy_patch, gt_patch
