@@ -156,7 +156,7 @@ def train_model_checkpointed(model, train_loader, val_loader, optimizer, schedul
         scheduler.step()
 
         # Save the model checkpoint after each epoch
-        checkpoint_path = os.path.join("checkpoints", f"diffusion_RDUnet_model_checkpointed_epoch_{epoch + 1}.pth")
+        checkpoint_path = os.path.join("checkpoints", f"diffusion_RDUNet_model_checkpointed_epoch_{epoch + 1}.pth")
         os.makedirs(os.path.dirname(checkpoint_path), exist_ok=True)
         torch.save({
             'epoch': epoch + 1,
@@ -188,6 +188,22 @@ def start_tensorboard(log_dir):
     except Exception as e:
         print(f"Failed to start TensorBoard: {e}")
 
+def display_training_parameters(args):
+    print("\nTraining Parameters:")
+    print(f"Dataset Choice: {args.dataset_choice}")
+    print(f"Checkpoint Path: {args.checkpoint_path}")
+    print(f"Number of Epochs: {args.num_epochs}")
+    print(f"Batch Size: {args.batch_size}")
+    print(f"Number of Workers: {args.num_workers}")
+    print(f"Validation Split: {args.validation_split}")
+    print(f"Data Augmentation: {args.augment}")
+    print(f"Dataset Percentage: {args.dataset_percentage}")
+    print(f"Base Filters: {args.base_filters}")
+    print(f"Timesteps: {args.timesteps}")
+    print(f"Optimizer Choice: {args.optimizer_choice}")
+    print(f"Scheduler Choice: {args.scheduler_choice}")
+    print("\n")
+
 if __name__ == "__main__":
     try:
         # Argument parser for command line arguments
@@ -211,6 +227,18 @@ if __name__ == "__main__":
             torch.cuda.empty_cache()
         if torch.backends.mps.is_available():
             torch.mps.empty_cache()
+
+        ascii_art = """
+        ██    ██ ██    ██ ██████       █████  ██     ██       █████  ██████  
+        ██    ██ ██    ██ ██   ██     ██   ██ ██     ██      ██   ██ ██   ██ 
+        ██    ██ ██    ██ ██████      ███████ ██     ██      ███████ ██████  
+         ██  ██  ██    ██ ██   ██     ██   ██ ██     ██      ██   ██ ██   ██ 
+          ████    ██████  ██████      ██   ██ ██     ███████ ██   ██ ██████  
+                                                                           
+        """
+        print(ascii_art)
+
+        display_training_parameters(args)
 
         log_dir = os.path.join("runs", "diffusion_checkpointed")
         writer = SummaryWriter(log_dir=log_dir)
