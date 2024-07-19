@@ -30,7 +30,7 @@ def evaluate_model(model, val_loader):
 def objective(trial):
     # Define hyperparameter search space
     args = argparse.Namespace()
-    args.dataset_choice = trial.suggest_categorical('dataset_choice', ['DIV2K', 'SIDD'])
+    args.dataset_choice = 'SIDD'
     args.checkpoint_path = None
     args.num_epochs = 5
     args.batch_size = 8
