@@ -331,7 +331,6 @@ def train_model_checkpointed(model, train_loader, val_loader, optimizer, schedul
         }, checkpoint_path)
         print(f"Model checkpoint saved at {checkpoint_path}")
 
-
 def load_checkpoint(model, optimizer, scheduler, checkpoint_path):
     if (checkpoint_path is not None) and os.path.isfile(checkpoint_path):
         print(f"Loading checkpoint '{checkpoint_path}'")
@@ -356,19 +355,22 @@ def start_tensorboard(log_dir):
 
 if __name__ == "__main__":
     try:
-        # Configuration block for setting parameters
-        dataset_choice = 'SIDD'  # Set 'DIV2K' or 'SIDD'
-        image_folder = 'DIV2K_train_HR.nosync' if dataset_choice == 'DIV2K' else 'SIDD_dataset.nosync/SIDD_Medium_Srgb'
-        checkpoint_path = None  # Set to checkpoint file path if resuming from checkpoint
-        # os.path.join("checkpoints", "diffusion_RDUnet_model_checkpointed_epoch_89.pth")
-        num_epochs = 300
-        batch_size = 8
-        num_workers = 8
-        validation_split = 0.2
-        augment = False
-        dataset_percentage = 0.1
-        base_filters = 32
-        timesteps = 20
+        # Argument parser for command line arguments
+        parser = argparse.ArgumentParser(description="Train a diffusion model with optional optimizer and scheduler choice.")
+        parser.add_argument('--dataset_choice', type=str, default='SIDD', choices=['DIV2K', 'SIDD'], help="Choice of dataset (DIV2K or SIDD)")
+        parser.add_argument('--checkpoint_path', type=str, default=None, help="Path to model checkpoint")
+        parser.add_argument('--num_epochs', type=int, default=300, help="Number of epochs to train")
+        parser.add_argument('--batch_size', type=int, default=8, help="Batch size for training")
+        parser.add_argument('--num_workers', type=int, default=8, help="Number of workers for data loading")
+        parser.add_argument('--validation_split', type=float, default=0.2, help="Validation split percentage")
+        parser.add_argument('--augment', action='store_false', help="Use data augmentation")
+        parser.add_argument('--dataset_percentage', type=float, default=0.1, help="Percentage of dataset to use for training")
+        parser.add_argument('--base_filters', type=int, default=32, help="Base number of filters for the model")
+        parser.add_argument('--timesteps', type=int, default=20, help="Number of timesteps for the diffusion model")
+        parser.add_argument('--optimizer_choice', type=str, default='adamw', choices=['adam', 'adamw'], help="Choice of optimizer (adam or adamw)")
+        parser.add_argument('--scheduler_choice', type=str, default='step', choices=['cosine', 'step'], help="Choice of scheduler (cosine or step)")
+        
+        args = parser.parse_args()
 
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
@@ -380,26 +382,32 @@ if __name__ == "__main__":
         start_tensorboard(log_dir)
         
         # Load data based on the selected dataset
-        if dataset_choice == 'DIV2K':
-            train_loader, val_loader = load_div2k_data(image_folder, batch_size=batch_size, augment=augment, dataset_percentage=dataset_percentage, validation_split=validation_split, use_rgb=True, num_workers=num_workers)
-        elif dataset_choice == 'SIDD':
-            train_loader, val_loader = load_sidd_data(image_folder, batch_size=batch_size, augment=augment, dataset_percentage=dataset_percentage, validation_split=validation_split, use_rgb=True, num_workers=num_workers)
+        if args.dataset_choice == 'DIV2K':
+            train_loader, val_loader = load_div2k_data(args.image_folder, batch_size=args.batch_size, augment=args.augment, dataset_percentage=args.dataset_percentage, validation_split=args.validation_split, use_rgb=True, num_workers=args.num_workers)
+        elif args.dataset_choice == 'SIDD':
+            train_loader, val_loader = load_sidd_data(args.image_folder, batch_size=args.batch_size, augment=args.augment, dataset_percentage=args.dataset_percentage, validation_split=args.validation_split, use_rgb=True, num_workers=args.num_workers)
         
         # Initialize the model with the configured parameters
-        unet_checkpointed = RDUNet_T(base_filters=base_filters).to(device)
-        model_checkpointed = DiffusionModel(unet_checkpointed, timesteps=timesteps).to(device)
+        unet_checkpointed = RDUNet_T(base_filters=args.base_filters).to(device)
+        model_checkpointed = DiffusionModel(unet_checkpointed, timesteps=args.timesteps).to(device)
         
         # Apply weight initialization
         unet_checkpointed.apply(init_weights())
         
-        # Define the optimizer and scheduler
-        optimizer = optim.Adam(model_checkpointed.parameters(), lr=2e-4, betas=(0.9, 0.999))
-        scheduler = CosineAnnealingLR(optimizer, T_max=10)
-        
+        # Define the optimizer
+        if args.optimizer_choice == 'adam':
+            optimizer = optim.Adam(model_checkpointed.parameters(), lr=2e-4, betas=(0.9, 0.999))
+            scheduler = CosineAnnealingLR(optimizer, T_max=10)  # Default scheduler
+        elif args.optimizer_choice == 'adamw':
+            optimizer = optim.AdamW(model_checkpointed.parameters(), lr=1e-4, weight_decay=1e-5)
+            scheduler_step = 3
+            scheduler_gamma = 0.5
+            scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=scheduler_step, gamma=scheduler_gamma)
+
         # Load checkpoint if provided
-        start_epoch = load_checkpoint(model_checkpointed, optimizer, scheduler, checkpoint_path)
+        start_epoch = load_checkpoint(model_checkpointed, optimizer, scheduler, args.checkpoint_path)
         
-        train_model_checkpointed(model_checkpointed, train_loader, val_loader, optimizer, scheduler, writer, num_epochs=num_epochs, start_epoch=start_epoch)
+        train_model_checkpointed(model_checkpointed, train_loader, val_loader, optimizer, scheduler, writer, num_epochs=args.num_epochs, start_epoch=start_epoch)
         writer.close()
     except Exception as e:
         print(f"An error occurred: {e}")
