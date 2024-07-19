@@ -380,12 +380,14 @@ if __name__ == "__main__":
         log_dir = os.path.join("runs", "diffusion_checkpointed")
         writer = SummaryWriter(log_dir=log_dir)
         start_tensorboard(log_dir)
+
+        image_folder = 'DIV2K_train_HR.nosync' if args.dataset_choice == 'DIV2K' else 'SIDD_dataset.nosync/SIDD_Medium_Srgb'
         
         # Load data based on the selected dataset
         if args.dataset_choice == 'DIV2K':
-            train_loader, val_loader = load_div2k_data(args.image_folder, batch_size=args.batch_size, augment=args.augment, dataset_percentage=args.dataset_percentage, validation_split=args.validation_split, use_rgb=True, num_workers=args.num_workers)
+            train_loader, val_loader = load_div2k_data(image_folder, batch_size=args.batch_size, augment=args.augment, dataset_percentage=args.dataset_percentage, validation_split=args.validation_split, use_rgb=True, num_workers=args.num_workers)
         elif args.dataset_choice == 'SIDD':
-            train_loader, val_loader = load_sidd_data(args.image_folder, batch_size=args.batch_size, augment=args.augment, dataset_percentage=args.dataset_percentage, validation_split=args.validation_split, use_rgb=True, num_workers=args.num_workers)
+            train_loader, val_loader = load_sidd_data(image_folder, batch_size=args.batch_size, augment=args.augment, dataset_percentage=args.dataset_percentage, validation_split=args.validation_split, use_rgb=True, num_workers=args.num_workers)
         
         # Initialize the model with the configured parameters
         unet_checkpointed = RDUNet_T(base_filters=args.base_filters).to(device)
