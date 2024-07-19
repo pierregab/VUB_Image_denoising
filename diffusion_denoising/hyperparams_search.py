@@ -2,6 +2,8 @@ import optuna
 import torch
 import argparse
 import os
+import pandas as pd
+from tabulate import tabulate
 from diffusion_RDUnet import train, DiffusionModel, RDUNet_T, denormalize, load_data
 
 device = torch.device("cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu")
@@ -50,6 +52,11 @@ def objective(trial, train_loader, val_loader):
         args.lr = trial.suggest_loguniform('lr', 1e-5, 1e-3)
         args.weight_decay = trial.suggest_loguniform('weight_decay', 1e-5, 1e-3)
 
+    # Print trial parameters
+    print("\nTrial parameters:")
+    for key, value in trial.params.items():
+        print(f"{key}: {value}")
+
     # Train the model
     train(args, train_loader, val_loader)
 
@@ -61,6 +68,15 @@ def objective(trial, train_loader, val_loader):
 
     avg_psnr = evaluate_model(model_checkpointed, val_loader)
     return -avg_psnr  # Optuna minimizes the objective, so return negative PSNR
+
+def save_trial_results(trial, value):
+    trial_params = trial.params.copy()
+    trial_params['psnr'] = -value  # Store PSNR as positive value
+    results_df = pd.DataFrame([trial_params])
+    if not os.path.exists('trial_results.csv'):
+        results_df.to_csv('trial_results.csv', index=False)
+    else:
+        results_df.to_csv('trial_results.csv', mode='a', header=False, index=False)
 
 if __name__ == "__main__":
     # Load data once and reuse the same loaders for each trial
@@ -75,9 +91,14 @@ if __name__ == "__main__":
     train_loader, val_loader = load_data(args)
 
     study = optuna.create_study(direction='minimize')
-    study.optimize(lambda trial: objective(trial, train_loader, val_loader), n_trials=50)
+    study.optimize(lambda trial: objective(trial, train_loader, val_loader), n_trials=50, callbacks=[lambda study, trial: save_trial_results(trial, trial.value)])
 
     print(f"Best trial: {study.best_trial.value}")
     print("Best hyperparameters: ")
     for key, value in study.best_trial.params.items():
         print(f"{key}: {value}")
+
+    # Print all trial results in a beautiful table
+    results_df = pd.read_csv('trial_results.csv')
+    print("\nAll trial results:")
+    print(tabulate(results_df, headers='keys', tablefmt='pretty'))
