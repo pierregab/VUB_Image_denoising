@@ -288,6 +288,7 @@ if __name__ == "__main__":
         parser.add_argument('--scheduler_choice', type=str, default='step', choices=['cosine', 'step'])
         parser.add_argument('--output_dir', type=str, default='checkpoints', help="Directory to save checkpoints and final models")
         parser.add_argument('--lr', type=float, default=1e-4, help="Learning rate")
+        parser.add_argument('--weight_decay', type=float, default=1e-4, help="Weight decay for AdamW optimizer")
 
         args = parser.parse_args()
         train(args)
