@@ -6,7 +6,7 @@ import torch.distributions as dist
 def sample_uniform(num_samples, timesteps):
     return torch.randint(0, timesteps + 1, (num_samples,)).float()
 
-def sample_biased(num_samples, timesteps, alpha=2.0):
+def sample_biased(num_samples, timesteps, alpha=1.5):
     beta_dist = dist.Beta(alpha, 1.0)
     return beta_dist.sample((num_samples,)) * timesteps
 

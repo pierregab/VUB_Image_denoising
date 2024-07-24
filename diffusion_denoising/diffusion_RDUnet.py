@@ -270,7 +270,7 @@ def train(args, train_loader=None, val_loader=None):
         scheduler_gamma = 0.5
         scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=scheduler_step, gamma=scheduler_gamma)
     elif args.optimizer_choice == 'adadelta':
-        optimizer = optim.Adadelta(model_checkpointed.parameters(), lr=args.lr, weight_decay=args.weight_decay)
+        optimizer = optim.Adadelta(model_checkpointed.parameters(), lr=args.lr)
         scheduler_step = 3
         scheduler_gamma = 0.5
         scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=scheduler_step, gamma=scheduler_gamma)
