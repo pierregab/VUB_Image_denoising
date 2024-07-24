@@ -98,6 +98,12 @@ def save_example_images(example_images, save_dir):
         if predicted_diffusion_image.ndim == 3 and predicted_diffusion_image.shape[0] == 3:
             predicted_diffusion_image = np.transpose(predicted_diffusion_image, (1, 2, 0))
 
+        # Normalize images to [0, 1] range if not already
+        gt_image = np.clip(gt_image, 0, 1)
+        degraded_image = np.clip(degraded_image, 0, 1)
+        predicted_unet_image = np.clip(predicted_unet_image, 0, 1)
+        predicted_diffusion_image = np.clip(predicted_diffusion_image, 0, 1)
+
         print(f"Transposed gt_image shape: {gt_image.shape}")
         print(f"Transposed degraded_image shape: {degraded_image.shape}")
         print(f"Transposed predicted_unet_image shape: {predicted_unet_image.shape}")
@@ -122,6 +128,7 @@ def save_example_images(example_images, save_dir):
     plt.tight_layout()
     plt.savefig(os.path.join(save_dir, 'example_images.png'))
     plt.close()
+
 
 def save_error_map(gt_image, predicted_image, save_dir):
     error_map = np.abs(gt_image - predicted_image)
