@@ -418,12 +418,19 @@ def evaluate_model_and_plot(epochs, diffusion_model_paths, unet_model_path, val_
                     predicted_unet_np = denormalize(predicted_unet.cpu().numpy().squeeze())
 
                 if use_bm3d:
-                    bm3d_denoised = bm3d.bm3d(degraded_np, sigma_psd=30/255, stage_arg=bm3d.BM3DStages.ALL_STAGES)
-                    psnr_bm3d = calculate_psnr(gt_image_np, bm3d_denoised, data_range=1.0)
-                    ssim_bm3d = calculate_ssim(gt_image_np, bm3d_denoised)
-                    bm3d_denoised_tensor = torch.tensor(bm3d_denoised).unsqueeze(0).repeat(3, 1, 1).unsqueeze(0).to(device)
-                    lpips_bm3d = lpips_model(normalize_to_neg1_1(gt_image.unsqueeze(0).repeat(3, 1, 1, 1)), normalize_to_neg1_1(bm3d_denoised_tensor)).item()
-                    dists_bm3d = dists_model(normalize_to_neg1_1(gt_image.unsqueeze(0).repeat(3, 1, 1, 1)), normalize_to_neg1_1(bm3d_denoised_tensor)).item()
+                    try:
+                        bm3d_denoised = bm3d.bm3d(degraded_np, sigma_psd=30/255, stage_arg=bm3d.BM3DStages.ALL_STAGES)
+                        psnr_bm3d = calculate_psnr(gt_image_np, bm3d_denoised, data_range=1.0)
+                        ssim_bm3d = calculate_ssim(gt_image_np, bm3d_denoised)
+                        bm3d_denoised_tensor = torch.tensor(bm3d_denoised).unsqueeze(0).repeat(3, 1, 1).unsqueeze(0).to(device)
+                        lpips_bm3d = lpips_model(normalize_to_neg1_1(gt_image.unsqueeze(0).repeat(3, 1, 1, 1)), normalize_to_neg1_1(bm3d_denoised_tensor)).item()
+                        dists_bm3d = dists_model(normalize_to_neg1_1(gt_image.unsqueeze(0).repeat(3, 1, 1, 1)), normalize_to_neg1_1(bm3d_denoised_tensor)).item()
+                    except ValueError as e:
+                        print(f"BM3D Error: {e}")
+                        psnr_bm3d = 0
+                        ssim_bm3d = 0
+                        lpips_bm3d = 0
+                        dists_bm3d = 0
                 else:
                     psnr_bm3d = 0
                     ssim_bm3d = 0
@@ -715,4 +722,4 @@ if __name__ == "__main__":
     selected_studies = ['metrics', 'dists', 'example_images', 'histograms_of_differences', 'heatmaps', 'frequency_domain_analysis']
     save_directory = 'evaluation_results'
 
-    evaluate_model_and_plot(epochs_to_evaluate, diffusion_model_paths, unet_model_path, val_loader=val_loader, device=device, include_noise_level=True, use_bm3d=False, save_dir=save_directory, studies=selected_studies)
+    evaluate_model_and_plot(epochs_to_evaluate, diffusion_model_paths, unet_model_path, val_loader=val_loader, device=device, include_noise_level=True, use_bm3d=True, save_dir=save_directory, studies=selected_studies)
