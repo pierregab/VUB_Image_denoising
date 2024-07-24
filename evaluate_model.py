@@ -82,32 +82,11 @@ def save_example_images(example_images, save_dir):
     for i, (sigma, images) in enumerate(filtered_images.items()):
         gt_image, degraded_image, predicted_unet_image, predicted_diffusion_image = images
 
-        # Debugging print statements for shapes
-        print(f"Original gt_image shape: {gt_image.shape}")
-        print(f"Original degraded_image shape: {degraded_image.shape}")
-        print(f"Original predicted_unet_image shape: {predicted_unet_image.shape}")
-        print(f"Original predicted_diffusion_image shape: {predicted_diffusion_image.shape}")
-
         # Ensure all images are in the shape (H, W, C) and in the range [0, 1]
-        if gt_image.ndim == 3 and gt_image.shape[0] == 3:
-            gt_image = np.transpose(gt_image, (1, 2, 0))
-        if degraded_image.ndim == 3 and degraded_image.shape[0] == 3:
-            degraded_image = np.transpose(degraded_image, (1, 2, 0))
-        if predicted_unet_image.ndim == 3 and predicted_unet_image.shape[0] == 3:
-            predicted_unet_image = np.transpose(predicted_unet_image, (1, 2, 0))
-        if predicted_diffusion_image.ndim == 3 and predicted_diffusion_image.shape[0] == 3:
-            predicted_diffusion_image = np.transpose(predicted_diffusion_image, (1, 2, 0))
-
-        # Normalize images to [0, 1] range if not already
-        gt_image = np.clip(gt_image, 0, 1)
-        degraded_image = np.clip(degraded_image, 0, 1)
-        predicted_unet_image = np.clip(predicted_unet_image, 0, 1)
-        predicted_diffusion_image = np.clip(predicted_diffusion_image, 0, 1)
-
-        print(f"Transposed gt_image shape: {gt_image.shape}")
-        print(f"Transposed degraded_image shape: {degraded_image.shape}")
-        print(f"Transposed predicted_unet_image shape: {predicted_unet_image.shape}")
-        print(f"Transposed predicted_diffusion_image shape: {predicted_diffusion_image.shape}")
+        gt_image = np.transpose(gt_image, (1, 2, 0))
+        degraded_image = np.transpose(degraded_image, (1, 2, 0))
+        predicted_unet_image = np.transpose(predicted_unet_image, (1, 2, 0))
+        predicted_diffusion_image = np.transpose(predicted_diffusion_image, (1, 2, 0))
 
         axs[i, 0].imshow(gt_image)
         axs[i, 0].set_title(f'Ground Truth (Sigma: {sigma})')
@@ -128,7 +107,6 @@ def save_example_images(example_images, save_dir):
     plt.tight_layout()
     plt.savefig(os.path.join(save_dir, 'example_images.png'))
     plt.close()
-
 
 def save_error_map(gt_image, predicted_image, save_dir):
     error_map = np.abs(gt_image - predicted_image)
