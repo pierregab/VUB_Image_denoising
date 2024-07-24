@@ -10,6 +10,7 @@ from torchvision.utils import make_grid
 import torch.utils.checkpoint as cp
 from torch.optim.lr_scheduler import CosineAnnealingLR
 import pytorch_msssim
+import torch.distributions as dist
 
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 sys.path.append(project_root)
@@ -66,16 +67,24 @@ def combined_loss(pred, target, mse_weight=0, charbonnier_weight=1, ssim_weight=
 def denormalize(tensor):
     return tensor * 0.5 + 0.5
 
+# Sample biased timesteps
+def sample_biased(num_samples, timesteps, alpha=2.0):
+    beta_dist = dist.Beta(alpha, 1.0)
+    return beta_dist.sample((num_samples,)) * timesteps
+
 # Sample training loop
-def train_step_checkpointed(model, clean_images, noisy_images, optimizer, accumulation_steps, clip_value=0.1):
+def train_step_checkpointed(model, clean_images, noisy_images, optimizer, accumulation_steps, distribution_choice, clip_value=0.1):
     model.train()
     optimizer.zero_grad()
     
     batch_size = clean_images.size(0)
     timesteps = model.timesteps
     
-    # Sample a random timestep uniformly for each image in the batch
-    t = torch.randint(0, timesteps + 1, (batch_size,), device=clean_images.device).float()
+    # Sample a random timestep uniformly or biased for each image in the batch
+    if distribution_choice == 'biased':
+        t = sample_biased(batch_size, timesteps)
+    else:
+        t = torch.randint(0, timesteps + 1, (batch_size,), device=clean_images.device).float()
     
     # Normalize the timestep
     t_normalized = t / timesteps
@@ -105,14 +114,14 @@ def train_step_checkpointed(model, clean_images, noisy_images, optimizer, accumu
     
     return loss.item()
 
-def train_model_checkpointed(model, train_loader, val_loader, optimizer, scheduler, writer, output_dir, num_epochs=10, start_epoch=0, accumulation_steps=4, clip_value=1.0):
+def train_model_checkpointed(model, train_loader, val_loader, optimizer, scheduler, writer, output_dir, distribution_choice, num_epochs=10, start_epoch=0, accumulation_steps=4, clip_value=1.0):
     for epoch in range(start_epoch, num_epochs):
         # Training phase
         model.train()
         optimizer.zero_grad()
         for batch_idx, (noisy_images, clean_images) in enumerate(train_loader):
             noisy_images, clean_images = noisy_images.to(device), clean_images.to(device)
-            loss = train_step_checkpointed(model, clean_images, noisy_images, optimizer, accumulation_steps, clip_value)
+            loss = train_step_checkpointed(model, clean_images, noisy_images, optimizer, accumulation_steps, distribution_choice, clip_value)
             
             if (batch_idx + 1) % accumulation_steps == 0:
                 optimizer.step()
@@ -207,6 +216,7 @@ def display_training_parameters(args):
     print(f"Output Directory: {args.output_dir}")
     print(f"Learning Rate: {args.lr}")
     print(f"Weight Decay: {args.weight_decay}")
+    print(f"Distribution Choice: {args.distribution_choice}")
     print("\n")
 
 def load_data(args):
@@ -228,7 +238,7 @@ def train(args, train_loader=None, val_loader=None):
     ██    ██ ██    ██ ██   ██     ██   ██ ██     ██      ██   ██ ██   ██ 
     ██    ██ ██    ██ ██████      ███████ ██     ██      ███████ ██████  
      ██  ██  ██    ██ ██   ██     ██   ██ ██     ██      ██   ██ ██   ██ 
-      ████    ██████  ██████      ██   ██ ██     ███████ ██   ██ ██████  
+      ████    ██████  ██████      ██   ██ ██     ███████ ██   ██ ██████ 
                                                                        
     """
     print(ascii_art)
@@ -268,7 +278,7 @@ def train(args, train_loader=None, val_loader=None):
     # Load checkpoint if provided
     start_epoch = load_checkpoint(model_checkpointed, optimizer, scheduler, args.checkpoint_path)
     
-    train_model_checkpointed(model_checkpointed, train_loader, val_loader, optimizer, scheduler, writer, args.output_dir, num_epochs=args.num_epochs, start_epoch=start_epoch)
+    train_model_checkpointed(model_checkpointed, train_loader, val_loader, optimizer, scheduler, writer, args.output_dir, args.distribution_choice, num_epochs=args.num_epochs, start_epoch=start_epoch)
     
     # Save final model
     final_model_path = os.path.join(args.output_dir, "diffusion_RDUNet_model_checkpointed_final.pth")
@@ -296,6 +306,7 @@ if __name__ == "__main__":
         parser.add_argument('--output_dir', type=str, default='checkpoints', help="Directory to save checkpoints and final models")
         parser.add_argument('--lr', type=float, default=1e-4, help="Learning rate")
         parser.add_argument('--weight_decay', type=float, default=1e-4, help="Weight decay for AdamW optimizer")
+        parser.add_argument('--distribution_choice', type=str, default='uniform', choices=['uniform', 'biased'], help="Choice of distribution for sampling timesteps")
 
         args = parser.parse_args()
         train(args)
