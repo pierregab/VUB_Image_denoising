@@ -83,10 +83,29 @@ def save_example_images(example_images, save_dir):
         gt_image, degraded_image, predicted_unet_image, predicted_diffusion_image = images
 
         # Ensure all images are in the shape (H, W, C) and in the range [0, 1]
-        gt_image = np.transpose(gt_image, (1, 2, 0))
-        degraded_image = np.transpose(degraded_image, (1, 2, 0))
-        predicted_unet_image = np.transpose(predicted_unet_image, (1, 2, 0))
-        predicted_diffusion_image = np.transpose(predicted_diffusion_image, (1, 2, 0))
+        if gt_image_np.ndim == 3 and gt_image_np.shape[0] == 3:
+            print(f"Original gt_image_np shape: {gt_image_np.shape}")
+            gt_image_np = np.transpose(gt_image_np, (1, 2, 0))
+            print(f"Transposed gt_image_np shape: {gt_image_np.shape}")
+        else:
+            print(f"Skipping transpose for gt_image_np with shape: {gt_image_np.shape}")
+
+        if degraded_np.ndim == 3 and degraded_np.shape[0] == 3:
+            print(f"Original degraded_np shape: {degraded_np.shape}")
+            degraded_np = np.transpose(degraded_np, (1, 2, 0))
+            print(f"Transposed degraded_np shape: {degraded_np.shape}")
+        else:
+            print(f"Skipping transpose for degraded_np with shape: {degraded_np.shape}")
+
+        if degraded_np.ndim == 3 and degraded_np.shape[2] == 3:  # Convert RGB to grayscale
+            print(f"Converting degraded_np to grayscale from shape: {degraded_np.shape}")
+            degraded_np = np.mean(degraded_np, axis=2)
+            print(f"Grayscale degraded_np shape: {degraded_np.shape}")
+
+        if gt_image_np.ndim == 3 and gt_image_np.shape[2] == 3:  # Convert RGB to grayscale
+            print(f"Converting gt_image_np to grayscale from shape: {gt_image_np.shape}")
+            gt_image_np = np.mean(gt_image_np, axis=2)
+            print(f"Grayscale gt_image_np shape: {gt_image_np.shape}")
 
         axs[i, 0].imshow(gt_image)
         axs[i, 0].set_title(f'Ground Truth (Sigma: {sigma})')
