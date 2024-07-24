@@ -455,11 +455,11 @@ def evaluate_model_and_plot(epochs, diffusion_model_paths, unet_model_path, val_
 
                         psnr_bm3d = calculate_psnr(gt_image_np, bm3d_denoised, data_range=1.0)
                         ssim_bm3d = calculate_ssim(gt_image_np, bm3d_denoised)
-                        bm3d_denoised_tensor = torch.tensor(bm3d_denoised).unsqueeze(0).repeat(3, 1, 1).unsqueeze(0).to(device, dtype=torch.float32)
+                        bm3d_denoised_tensor = torch.tensor(bm3d_denoised).unsqueeze(0).unsqueeze(0).to(device, dtype=torch.float32)
                         
-                        gt_image_tensor = gt_image.unsqueeze(0).repeat(3, 1, 1, 1).to(device, dtype=torch.float32)
-                        lpips_bm3d = lpips_model(normalize_to_neg1_1(gt_image_tensor), normalize_to_neg1_1(bm3d_denoised_tensor)).item()
-                        dists_bm3d = dists_model(normalize_to_neg1_1(gt_image_tensor), normalize_to_neg1_1(bm3d_denoised_tensor)).item()
+                        gt_image_tensor = torch.tensor(gt_image_np).unsqueeze(0).unsqueeze(0).to(device, dtype=torch.float32)
+                        lpips_bm3d = lpips_model(normalize_to_neg1_1(gt_image_tensor.repeat(1, 3, 1, 1)), normalize_to_neg1_1(bm3d_denoised_tensor.repeat(1, 3, 1, 1))).item()
+                        dists_bm3d = dists_model(normalize_to_neg1_1(gt_image_tensor.repeat(1, 3, 1, 1)), normalize_to_neg1_1(bm3d_denoised_tensor.repeat(1, 3, 1, 1))).item()
                     except ValueError as e:
                         print(f"BM3D Error: {e}")
                         psnr_bm3d = 0
