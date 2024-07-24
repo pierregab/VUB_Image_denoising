@@ -439,7 +439,7 @@ def evaluate_model_and_plot(epochs, diffusion_model_paths, unet_model_path, val_
                             print(f"Transposed degraded_np shape: {degraded_np.shape}")
                         
                         if degraded_np.ndim == 3 and degraded_np.shape[2] == 3:  # Convert RGB to grayscale
-                            degraded_np = np.mean(degraded_np, axis=2)
+                            degraded_np_2 = np.mean(degraded_np, axis=2)
                             print(f"Grayscale degraded_np shape: {degraded_np.shape}")
                         
                         if gt_image_np.ndim == 3 and gt_image_np.shape[0] == 3:
@@ -447,7 +447,7 @@ def evaluate_model_and_plot(epochs, diffusion_model_paths, unet_model_path, val_
                             print(f"Transposed gt_image_np shape: {gt_image_np.shape}")
                         
                         if gt_image_np.ndim == 3 and gt_image_np.shape[2] == 3:  # Convert RGB to grayscale
-                            gt_image_np = np.mean(gt_image_np, axis=2)
+                            gt_image_np_2 = np.mean(gt_image_np, axis=2)
                             print(f"Grayscale gt_image_np shape: {gt_image_np.shape}")
 
                         if degraded_np.shape != gt_image_np.shape:
@@ -459,14 +459,14 @@ def evaluate_model_and_plot(epochs, diffusion_model_paths, unet_model_path, val_
                             raise ValueError("Image is too small for BM3D processing")
 
                         print("Applying BM3D denoising...")
-                        bm3d_denoised = bm3d.bm3d(degraded_np, sigma_psd=30/255, stage_arg=bm3d.BM3DStages.ALL_STAGES)
+                        bm3d_denoised = bm3d.bm3d(degraded_np_2, sigma_psd=30/255, stage_arg=bm3d.BM3DStages.ALL_STAGES)
                         print("BM3D denoising applied successfully.")
                         
                         # Convert bm3d_denoised to float32
                         bm3d_denoised = bm3d_denoised.astype(np.float32)
 
-                        psnr_bm3d = calculate_psnr(gt_image_np, bm3d_denoised, data_range=1.0)
-                        ssim_bm3d = calculate_ssim(gt_image_np, bm3d_denoised)
+                        psnr_bm3d = calculate_psnr(gt_image_np_2, bm3d_denoised, data_range=1.0)
+                        ssim_bm3d = calculate_ssim(gt_image_np_2, bm3d_denoised)
                         bm3d_denoised_tensor = torch.tensor(bm3d_denoised).unsqueeze(0).unsqueeze(0).to(device, dtype=torch.float32)
                         
                         gt_image_tensor = torch.tensor(gt_image_np).unsqueeze(0).unsqueeze(0).to(device, dtype=torch.float32)
