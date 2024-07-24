@@ -661,7 +661,7 @@ def save_inference_time_plot(inference_times, save_dir):
 if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() else "mps")
 
-    image_folder = 'DIV2K_valid_HR.nosync'
+    image_folder = 'dataset/DIV2K_valid_HR.nosync'
     train_noise_levels = [10, 20, 30, 40, 50, 60, 70, 80]
     val_noise_levels = [10, 20, 30, 40, 50, 60, 70, 80]
 
