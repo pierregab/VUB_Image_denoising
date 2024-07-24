@@ -422,9 +422,9 @@ def evaluate_model_and_plot(epochs, diffusion_model_paths, unet_model_path, val_
                         # Ensure the degraded_np image is in the correct format for BM3D
                         if degraded_np.ndim == 3 and degraded_np.shape[0] == 3:
                             degraded_np = np.transpose(degraded_np, (1, 2, 0))
-                        if degraded_np.shape[2] == 3:  # Convert RGB to grayscale
+                        if degraded_np.ndim == 3 and degraded_np.shape[2] == 3:  # Convert RGB to grayscale
                             degraded_np = np.mean(degraded_np, axis=2)
-
+                        
                         if degraded_np.shape[0] < 8 or degraded_np.shape[1] < 8:
                             raise ValueError("Image is too small for BM3D processing")
 
