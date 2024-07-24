@@ -90,14 +90,10 @@ def save_example_images(example_images, save_dir):
 
         # Transpose the images if needed
         if gt_image_np.ndim == 3 and gt_image_np.shape[0] == 3:
-            print(f"Original gt_image_np shape: {gt_image_np.shape}")
             gt_image_np = np.transpose(gt_image_np, (1, 2, 0))
-            print(f"Transposed gt_image_np shape: {gt_image_np.shape}")
 
         if degraded_np.ndim == 3 and degraded_np.shape[0] == 3:
-            print(f"Original degraded_np shape: {degraded_np.shape}")
             degraded_np = np.transpose(degraded_np, (1, 2, 0))
-            print(f"Transposed degraded_np shape: {degraded_np.shape}")
 
         if predicted_unet_np.ndim == 3 and predicted_unet_np.shape[0] == 3:
             predicted_unet_np = np.transpose(predicted_unet_np, (1, 2, 0))
@@ -105,19 +101,19 @@ def save_example_images(example_images, save_dir):
         if predicted_diffusion_np.ndim == 3 and predicted_diffusion_np.shape[0] == 3:
             predicted_diffusion_np = np.transpose(predicted_diffusion_np, (1, 2, 0))
 
-        axs[i, 0].imshow(gt_image_np)
+        axs[i, 0].imshow(gt_image_np, cmap=None)
         axs[i, 0].set_title(f'Ground Truth (Sigma: {sigma})')
         axs[i, 0].axis('off')
 
-        axs[i, 1].imshow(degraded_np)
+        axs[i, 1].imshow(degraded_np, cmap=None)
         axs[i, 1].set_title('Noisy')
         axs[i, 1].axis('off')
 
-        axs[i, 2].imshow(predicted_unet_np)
+        axs[i, 2].imshow(predicted_unet_np, cmap=None)
         axs[i, 2].set_title('Denoised (UNet)')
         axs[i, 2].axis('off')
 
-        axs[i, 3].imshow(predicted_diffusion_np)
+        axs[i, 3].imshow(predicted_diffusion_np, cmap=None)
         axs[i, 3].set_title('Denoised (Diffusion)')
         axs[i, 3].axis('off')
 
