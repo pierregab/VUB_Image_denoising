@@ -420,18 +420,40 @@ def evaluate_model_and_plot(epochs, diffusion_model_paths, unet_model_path, val_
                 if use_bm3d:
                     try:
                         # Ensure the degraded_np image is in the correct format for BM3D
+                        print(f"Original degraded_np shape: {degraded_np.shape}")
+                        
                         if degraded_np.ndim == 3 and degraded_np.shape[0] == 3:
                             degraded_np = np.transpose(degraded_np, (1, 2, 0))
+                            print(f"Transposed degraded_np shape: {degraded_np.shape}")
+                        
                         if degraded_np.ndim == 3 and degraded_np.shape[2] == 3:  # Convert RGB to grayscale
                             degraded_np = np.mean(degraded_np, axis=2)
+                            print(f"Grayscale degraded_np shape: {degraded_np.shape}")
                         
+                        if gt_image_np.ndim == 3 and gt_image_np.shape[0] == 3:
+                            gt_image_np = np.transpose(gt_image_np, (1, 2, 0))
+                            print(f"Transposed gt_image_np shape: {gt_image_np.shape}")
+                        
+                        if gt_image_np.ndim == 3 and gt_image_np.shape[2] == 3:  # Convert RGB to grayscale
+                            gt_image_np = np.mean(gt_image_np, axis=2)
+                            print(f"Grayscale gt_image_np shape: {gt_image_np.shape}")
+
+                        if degraded_np.shape != gt_image_np.shape:
+                            print(f"degraded_np shape: {degraded_np.shape}")
+                            print(f"gt_image_np shape: {gt_image_np.shape}")
+                            raise ValueError("Input images must have the same dimensions")
+
                         if degraded_np.shape[0] < 8 or degraded_np.shape[1] < 8:
                             raise ValueError("Image is too small for BM3D processing")
 
+                        print("Applying BM3D denoising...")
                         bm3d_denoised = bm3d.bm3d(degraded_np, sigma_psd=30/255, stage_arg=bm3d.BM3DStages.ALL_STAGES)
+                        print("BM3D denoising applied successfully.")
+                        
                         psnr_bm3d = calculate_psnr(gt_image_np, bm3d_denoised, data_range=1.0)
                         ssim_bm3d = calculate_ssim(gt_image_np, bm3d_denoised)
                         bm3d_denoised_tensor = torch.tensor(bm3d_denoised).unsqueeze(0).repeat(3, 1, 1).unsqueeze(0).to(device)
+                        
                         lpips_bm3d = lpips_model(normalize_to_neg1_1(gt_image.unsqueeze(0).repeat(3, 1, 1, 1)), normalize_to_neg1_1(bm3d_denoised_tensor)).item()
                         dists_bm3d = dists_model(normalize_to_neg1_1(gt_image.unsqueeze(0).repeat(3, 1, 1, 1)), normalize_to_neg1_1(bm3d_denoised_tensor)).item()
                     except ValueError as e:
@@ -440,6 +462,13 @@ def evaluate_model_and_plot(epochs, diffusion_model_paths, unet_model_path, val_
                         ssim_bm3d = 0
                         lpips_bm3d = 0
                         dists_bm3d = 0
+                    except Exception as e:
+                        print(f"Unexpected error during BM3D processing: {e}")
+                        psnr_bm3d = 0
+                        ssim_bm3d = 0
+                        lpips_bm3d = 0
+                        dists_bm3d = 0
+
                 else:
                     psnr_bm3d = 0
                     ssim_bm3d = 0
