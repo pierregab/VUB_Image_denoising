@@ -511,6 +511,9 @@ def evaluate_model_and_plot(epochs, diffusion_model_paths, unet_model_path, val_
     # Save the inference time comparison plot
     save_inference_time_plot(inference_times, save_dir)
 
+    # Generate the comparison plot
+    generate_comparison_plot(metrics, epochs, save_dir)
+
 def save_metrics(metrics, last_epoch, use_bm3d, save_dir):
     epochs = sorted(set(metrics['epoch']))
     noise_levels = np.array(metrics['noise_level'])
@@ -657,6 +660,44 @@ def save_inference_time_plot(inference_times, save_dir):
     plt.title('Average Inference Time Comparison')
     plt.savefig(os.path.join(save_dir, 'inference_time_comparison.png'))
     plt.close()
+
+def generate_comparison_plot(metrics, epochs, save_dir):
+    noise_levels = np.array(metrics['noise_level'])
+    unique_noise_levels = sorted(np.unique(noise_levels))
+    
+    psnr_diffusion = np.array(metrics['psnr_diffusion'])
+    psnr_unet = np.array(metrics['psnr_unet'])
+    psnr_bm3d = np.array(metrics['psnr_bm3d'])
+    lpips_diffusion = np.array(metrics['lpips_diffusion'])
+    lpips_unet = np.array(metrics['lpips_unet'])
+    lpips_bm3d = np.array(metrics['lpips_bm3d'])
+
+    avg_psnr_diffusion = [np.mean(psnr_diffusion[noise_levels == nl]) for nl in unique_noise_levels]
+    avg_psnr_unet = [np.mean(psnr_unet[noise_levels == nl]) for nl in unique_noise_levels]
+    avg_psnr_bm3d = [np.mean(psnr_bm3d[noise_levels == nl]) for nl in unique_noise_levels]
+    avg_lpips_diffusion = [np.mean(lpips_diffusion[noise_levels == nl]) for nl in unique_noise_levels]
+    avg_lpips_unet = [np.mean(lpips_unet[noise_levels == nl]) for nl in unique_noise_levels]
+    avg_lpips_bm3d = [np.mean(lpips_bm3d[noise_levels == nl]) for nl in unique_noise_levels]
+
+    plt.figure(figsize=(10, 6))
+    
+    # Plot diffusion model
+    plt.scatter(avg_lpips_diffusion, avg_psnr_diffusion, label='Diffusion Model', color='green', marker='*', s=100)
+    
+    # Plot UNet model
+    plt.scatter(avg_lpips_unet, avg_psnr_unet, label='UNet Model', color='purple', marker='o', s=100)
+    
+    # Plot BM3D
+    plt.scatter(avg_lpips_bm3d, avg_psnr_bm3d, label='BM3D', color='blue', marker='^', s=100)
+    
+    plt.xlabel('LPIPS')
+    plt.ylabel('PSNR')
+    plt.title('Model Comparison')
+    plt.legend()
+    plt.grid(True)
+    
+    plt.savefig(os.path.join(save_dir, 'comparison_plot.png'))
+    plt.show()
 
 if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() else "mps")
