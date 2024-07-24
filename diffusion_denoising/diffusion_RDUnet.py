@@ -205,6 +205,8 @@ def display_training_parameters(args):
     print(f"Optimizer Choice: {args.optimizer_choice}")
     print(f"Scheduler Choice: {args.scheduler_choice}")
     print(f"Output Directory: {args.output_dir}")
+    print(f"Learning Rate: {args.lr}")
+    print(f"Weight Decay: {args.weight_decay}")
     print("\n")
 
 def load_data(args):
@@ -257,6 +259,11 @@ def train(args, train_loader=None, val_loader=None):
         scheduler_step = 3
         scheduler_gamma = 0.5
         scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=scheduler_step, gamma=scheduler_gamma)
+    elif args.optimizer_choice == 'adadelta':
+        optimizer = optim.Adadelta(model_checkpointed.parameters(), lr=args.lr, weight_decay=args.weight_decay)
+        scheduler_step = 3
+        scheduler_gamma = 0.5
+        scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=scheduler_step, gamma=scheduler_gamma)
 
     # Load checkpoint if provided
     start_epoch = load_checkpoint(model_checkpointed, optimizer, scheduler, args.checkpoint_path)
@@ -284,7 +291,7 @@ if __name__ == "__main__":
         parser.add_argument('--dataset_percentage', type=float, default=0.1, help="Percentage of dataset to use for training")
         parser.add_argument('--base_filters', type=int, default=32, help="Base number of filters for the model")
         parser.add_argument('--timesteps', type=int, default=20, help="Number of timesteps for the diffusion model")
-        parser.add_argument('--optimizer_choice', type=str, default='adamw', choices=['adam', 'adamw'], help="Choice of optimizer (adam or adamw)")
+        parser.add_argument('--optimizer_choice', type=str, default='adamw', choices=['adam', 'adamw', 'adadelta'], help="Choice of optimizer (adam, adamw, or adadelta)")
         parser.add_argument('--scheduler_choice', type=str, default='step', choices=['cosine', 'step'])
         parser.add_argument('--output_dir', type=str, default='checkpoints', help="Directory to save checkpoints and final models")
         parser.add_argument('--lr', type=float, default=1e-4, help="Learning rate")
