@@ -82,13 +82,13 @@ def save_example_images(example_images, save_dir):
     for i, (sigma, images) in enumerate(filtered_images.items()):
         gt_image, degraded_image, predicted_unet_image, predicted_diffusion_image = images
 
-        # Ensure all images are in the shape (H, W, C) and in the range [0, 1]
+        # Function to process and prepare image for plotting
         def process_image(img):
             img_np = np.array(img)
             if img_np.ndim == 3 and img_np.shape[0] == 3:
                 img_np = np.transpose(img_np, (1, 2, 0))
             if img_np.dtype != np.uint8:
-                img_np = np.clip(img_np, 0, 1)
+                img_np = np.clip(img_np * 255, 0, 255).astype(np.uint8)
             return img_np
 
         gt_image_np = process_image(gt_image)
@@ -96,21 +96,25 @@ def save_example_images(example_images, save_dir):
         predicted_unet_np = process_image(predicted_unet_image)
         predicted_diffusion_np = process_image(predicted_diffusion_image)
 
-        axs[i, 0].imshow(gt_image_np)
-        axs[i, 0].set_title(f'Ground Truth (Sigma: {sigma})')
-        axs[i, 0].axis('off')
+        # Handle case where axs is not 2D (when num_levels = 1)
+        if num_levels == 1:
+            axs = [axs]
 
-        axs[i, 1].imshow(degraded_np)
-        axs[i, 1].set_title('Noisy')
-        axs[i, 1].axis('off')
+        axs[i][0].imshow(gt_image_np, cmap='gray' if gt_image_np.ndim == 2 else None)
+        axs[i][0].set_title(f'Ground Truth (Sigma: {sigma})')
+        axs[i][0].axis('off')
 
-        axs[i, 2].imshow(predicted_unet_np)
-        axs[i, 2].set_title('Denoised (UNet)')
-        axs[i, 2].axis('off')
+        axs[i][1].imshow(degraded_np, cmap='gray' if degraded_np.ndim == 2 else None)
+        axs[i][1].set_title('Noisy')
+        axs[i][1].axis('off')
 
-        axs[i, 3].imshow(predicted_diffusion_np)
-        axs[i, 3].set_title('Denoised (Diffusion)')
-        axs[i, 3].axis('off')
+        axs[i][2].imshow(predicted_unet_np, cmap='gray' if predicted_unet_np.ndim == 2 else None)
+        axs[i][2].set_title('Denoised (UNet)')
+        axs[i][2].axis('off')
+
+        axs[i][3].imshow(predicted_diffusion_np, cmap='gray' if predicted_diffusion_np.ndim == 2 else None)
+        axs[i][3].set_title('Denoised (Diffusion)')
+        axs[i][3].axis('off')
 
     plt.tight_layout()
     plt.savefig(os.path.join(save_dir, 'example_images.png'))
