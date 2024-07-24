@@ -83,37 +83,32 @@ def save_example_images(example_images, save_dir):
         gt_image, degraded_image, predicted_unet_image, predicted_diffusion_image = images
 
         # Ensure all images are in the shape (H, W, C) and in the range [0, 1]
-        gt_image_np = np.array(gt_image)
-        degraded_np = np.array(degraded_image)
-        predicted_unet_np = np.array(predicted_unet_image)
-        predicted_diffusion_np = np.array(predicted_diffusion_image)
+        def process_image(img):
+            img_np = np.array(img)
+            if img_np.ndim == 3 and img_np.shape[0] == 3:
+                img_np = np.transpose(img_np, (1, 2, 0))
+            if img_np.dtype != np.uint8:
+                img_np = np.clip(img_np, 0, 1)
+            return img_np
 
-        # Transpose the images if needed
-        if gt_image_np.ndim == 3 and gt_image_np.shape[0] == 3:
-            gt_image_np = np.transpose(gt_image_np, (1, 2, 0))
+        gt_image_np = process_image(gt_image)
+        degraded_np = process_image(degraded_image)
+        predicted_unet_np = process_image(predicted_unet_image)
+        predicted_diffusion_np = process_image(predicted_diffusion_image)
 
-        if degraded_np.ndim == 3 and degraded_np.shape[0] == 3:
-            degraded_np = np.transpose(degraded_np, (1, 2, 0))
-
-        if predicted_unet_np.ndim == 3 and predicted_unet_np.shape[0] == 3:
-            predicted_unet_np = np.transpose(predicted_unet_np, (1, 2, 0))
-
-        if predicted_diffusion_np.ndim == 3 and predicted_diffusion_np.shape[0] == 3:
-            predicted_diffusion_np = np.transpose(predicted_diffusion_np, (1, 2, 0))
-
-        axs[i, 0].imshow(gt_image_np, cmap=None)
+        axs[i, 0].imshow(gt_image_np)
         axs[i, 0].set_title(f'Ground Truth (Sigma: {sigma})')
         axs[i, 0].axis('off')
 
-        axs[i, 1].imshow(degraded_np, cmap=None)
+        axs[i, 1].imshow(degraded_np)
         axs[i, 1].set_title('Noisy')
         axs[i, 1].axis('off')
 
-        axs[i, 2].imshow(predicted_unet_np, cmap=None)
+        axs[i, 2].imshow(predicted_unet_np)
         axs[i, 2].set_title('Denoised (UNet)')
         axs[i, 2].axis('off')
 
-        axs[i, 3].imshow(predicted_diffusion_np, cmap=None)
+        axs[i, 3].imshow(predicted_diffusion_np)
         axs[i, 3].set_title('Denoised (Diffusion)')
         axs[i, 3].axis('off')
 
