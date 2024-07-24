@@ -85,34 +85,25 @@ def save_example_images(example_images, save_dir):
         # Ensure all images are in the shape (H, W, C) and in the range [0, 1]
         gt_image_np = np.array(gt_image)
         degraded_np = np.array(degraded_image)
-        predicted_unet_image = np.array(predicted_unet_image)
-        predicted_diffusion_image = np.array(predicted_diffusion_image)
+        predicted_unet_np = np.array(predicted_unet_image)
+        predicted_diffusion_np = np.array(predicted_diffusion_image)
 
         # Transpose the images if needed
         if gt_image_np.ndim == 3 and gt_image_np.shape[0] == 3:
             print(f"Original gt_image_np shape: {gt_image_np.shape}")
             gt_image_np = np.transpose(gt_image_np, (1, 2, 0))
             print(f"Transposed gt_image_np shape: {gt_image_np.shape}")
-        else:
-            print(f"Skipping transpose for gt_image_np with shape: {gt_image_np.shape}")
 
         if degraded_np.ndim == 3 and degraded_np.shape[0] == 3:
             print(f"Original degraded_np shape: {degraded_np.shape}")
             degraded_np = np.transpose(degraded_np, (1, 2, 0))
             print(f"Transposed degraded_np shape: {degraded_np.shape}")
-        else:
-            print(f"Skipping transpose for degraded_np with shape: {degraded_np.shape}")
 
-        # Convert to grayscale if needed
-        if degraded_np.ndim == 3 and degraded_np.shape[2] == 3:
-            print(f"Converting degraded_np to grayscale from shape: {degraded_np.shape}")
-            degraded_np = np.mean(degraded_np, axis=2)
-            print(f"Grayscale degraded_np shape: {degraded_np.shape}")
+        if predicted_unet_np.ndim == 3 and predicted_unet_np.shape[0] == 3:
+            predicted_unet_np = np.transpose(predicted_unet_np, (1, 2, 0))
 
-        if gt_image_np.ndim == 3 and gt_image_np.shape[2] == 3:
-            print(f"Converting gt_image_np to grayscale from shape: {gt_image_np.shape}")
-            gt_image_np = np.mean(gt_image_np, axis=2)
-            print(f"Grayscale gt_image_np shape: {gt_image_np.shape}")
+        if predicted_diffusion_np.ndim == 3 and predicted_diffusion_np.shape[0] == 3:
+            predicted_diffusion_np = np.transpose(predicted_diffusion_np, (1, 2, 0))
 
         axs[i, 0].imshow(gt_image_np)
         axs[i, 0].set_title(f'Ground Truth (Sigma: {sigma})')
@@ -122,11 +113,11 @@ def save_example_images(example_images, save_dir):
         axs[i, 1].set_title('Noisy')
         axs[i, 1].axis('off')
 
-        axs[i, 2].imshow(predicted_unet_image)
+        axs[i, 2].imshow(predicted_unet_np)
         axs[i, 2].set_title('Denoised (UNet)')
         axs[i, 2].axis('off')
 
-        axs[i, 3].imshow(predicted_diffusion_image)
+        axs[i, 3].imshow(predicted_diffusion_np)
         axs[i, 3].set_title('Denoised (Diffusion)')
         axs[i, 3].axis('off')
 
@@ -783,7 +774,7 @@ if __name__ == "__main__":
     train_noise_levels = [10, 20, 30, 40, 50, 60, 70, 80]
     val_noise_levels = [10, 20, 30, 40, 50, 60, 70, 80]
 
-    train_loader, val_loader = load_data(image_folder, batch_size=1, num_workers=8, validation_split=0.5, augment=False, dataset_percentage=0.01, only_validation=False, include_noise_level=True, train_noise_levels=train_noise_levels, val_noise_levels=val_noise_levels, use_rgb=True)
+    train_loader, val_loader = load_data(image_folder, batch_size=1, num_workers=8, validation_split=0.5, augment=False, dataset_percentage=0.001, only_validation=False, include_noise_level=True, train_noise_levels=train_noise_levels, val_noise_levels=val_noise_levels, use_rgb=True)
 
     epochs_to_evaluate = [5]
     diffusion_model_paths = [f"checkpoints/diffusion_RDUNet_model_checkpointed_epoch_{epoch}.pth" for epoch in epochs_to_evaluate]
