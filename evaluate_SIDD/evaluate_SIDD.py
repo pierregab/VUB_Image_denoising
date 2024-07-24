@@ -123,7 +123,7 @@ def main():
     model.to(device)
 
     # Load the model checkpoint
-    checkpoint_path = 'checkpoints/diffusion_RDUnet_model_checkpointed_epoch_40.pth'  # Adjust path as needed
+    checkpoint_path = 'checkpoints/diffusion_RDUNet_model_checkpointed_epoch_40.pth'  # Adjust path as needed
     checkpoint = torch.load(checkpoint_path, map_location=device)
     model.load_state_dict(checkpoint['model_state_dict'])  # Only load the model parameters
 
