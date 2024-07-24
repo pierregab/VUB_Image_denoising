@@ -419,6 +419,15 @@ def evaluate_model_and_plot(epochs, diffusion_model_paths, unet_model_path, val_
 
                 if use_bm3d:
                     try:
+                        # Ensure the degraded_np image is in the correct format for BM3D
+                        if degraded_np.ndim == 3 and degraded_np.shape[0] == 3:
+                            degraded_np = np.transpose(degraded_np, (1, 2, 0))
+                        if degraded_np.shape[2] == 3:  # Convert RGB to grayscale
+                            degraded_np = np.mean(degraded_np, axis=2)
+
+                        if degraded_np.shape[0] < 8 or degraded_np.shape[1] < 8:
+                            raise ValueError("Image is too small for BM3D processing")
+
                         bm3d_denoised = bm3d.bm3d(degraded_np, sigma_psd=30/255, stage_arg=bm3d.BM3DStages.ALL_STAGES)
                         psnr_bm3d = calculate_psnr(gt_image_np, bm3d_denoised, data_range=1.0)
                         ssim_bm3d = calculate_ssim(gt_image_np, bm3d_denoised)
@@ -520,6 +529,7 @@ def evaluate_model_and_plot(epochs, diffusion_model_paths, unet_model_path, val_
 
     # Generate the comparison plot
     generate_comparison_plot(metrics, epochs, save_dir)
+
 
 def save_metrics(metrics, last_epoch, use_bm3d, save_dir):
     epochs = sorted(set(metrics['epoch']))
