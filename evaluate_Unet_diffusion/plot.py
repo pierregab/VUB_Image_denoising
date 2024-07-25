@@ -3,6 +3,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.signal import welch
 from matplotlib.colors import LinearSegmentedColormap
+from matplotlib.ticker import ScalarFormatter
 
 def save_example_images(example_images, save_dir):
     noise_levels_to_plot = [15, 30, 50]
@@ -229,14 +230,15 @@ def plot_psd_comparison(metrics, last_epoch, save_dir, high_freq_threshold=0.5):
     epochs = sorted(set(metrics['epoch']))
     noise_levels = np.array(metrics['noise_level'])
     unique_noise_levels = sorted(np.unique(noise_levels))
-
+    
+    # Create a colorblind-friendly colormap
+    colors = ['#FFEDA0', '#FEB24C', '#F03B20']  # Light yellow to orange to dark red
+    n_bins = len(unique_noise_levels)
+    cmap = LinearSegmentedColormap.from_list("custom", colors, N=n_bins)
+    
     for nl in unique_noise_levels:
         idx = (noise_levels == nl) & (np.array(metrics['epoch']) == last_epoch)
-        
-        psd_gt_all = []
-        psd_unet_all = []
-        psd_diffusion_all = []
-        psd_degraded_all = []
+        psd_gt_all, psd_unet_all, psd_diffusion_all, psd_degraded_all = [], [], [], []
         
         for gt_image, degraded_image, predicted_unet_image, predicted_diffusion_image in zip(
             np.array(metrics['gt_image'])[idx],
@@ -255,30 +257,58 @@ def plot_psd_comparison(metrics, last_epoch, save_dir, high_freq_threshold=0.5):
             _, Pxx_diffusion = welch(predicted_diffusion_image.flatten(), nperseg=256)
 
             high_freq_idx = f_gt >= high_freq_threshold * np.max(f_gt)
-
             psd_gt_all.append(Pxx_gt[high_freq_idx])
             psd_degraded_all.append(Pxx_degraded[high_freq_idx])
             psd_unet_all.append(Pxx_unet[high_freq_idx])
             psd_diffusion_all.append(Pxx_diffusion[high_freq_idx])
-        
+
         avg_psd_gt = np.mean(psd_gt_all, axis=0)
         avg_psd_degraded = np.mean(psd_degraded_all, axis=0)
         avg_psd_unet = np.mean(psd_unet_all, axis=0)
         avg_psd_diffusion = np.mean(psd_diffusion_all, axis=0)
 
-        plt.figure(figsize=(10, 6))
-        plt.plot(f_gt[high_freq_idx], avg_psd_gt, label='Ground Truth', color='black')
-        plt.plot(f_gt[high_freq_idx], avg_psd_degraded, label='Degraded', color='red')
-        plt.plot(f_gt[high_freq_idx], avg_psd_unet, label='UNet Model', color='purple')
-        plt.plot(f_gt[high_freq_idx], avg_psd_diffusion, label=f'Diffusion Model (Epoch {last_epoch})', color='green')
-        plt.xlabel('Frequency')
-        plt.ylabel('Power Spectral Density (Log Scale)')
-        plt.yscale('log')
-        plt.title(f'Average PSD Comparison at Noise Level {nl}')
-        plt.legend()
-        plt.grid(True, which="both", ls="--")
+        # Calculate standard error
+        se_gt = np.std(psd_gt_all, axis=0) / np.sqrt(len(psd_gt_all))
+        se_degraded = np.std(psd_degraded_all, axis=0) / np.sqrt(len(psd_degraded_all))
+        se_unet = np.std(psd_unet_all, axis=0) / np.sqrt(len(psd_unet_all))
+        se_diffusion = np.std(psd_diffusion_all, axis=0) / np.sqrt(len(psd_diffusion_all))
+
+        fig, ax = plt.subplots(figsize=(14, 8))
+        
+        # Plot with error bands
+        ax.plot(f_gt[high_freq_idx], avg_psd_gt, label='Ground Truth', color='#000000', linewidth=2.5, zorder=5)
+        ax.fill_between(f_gt[high_freq_idx], avg_psd_gt - se_gt, avg_psd_gt + se_gt, color='#000000', alpha=0.1, zorder=4)
+        
+        ax.plot(f_gt[high_freq_idx], avg_psd_degraded, label='Degraded', color='#FF4136', linewidth=2.5, zorder=3)
+        ax.fill_between(f_gt[high_freq_idx], avg_psd_degraded - se_degraded, avg_psd_degraded + se_degraded, color='#FF4136', alpha=0.1, zorder=2)
+        
+        ax.plot(f_gt[high_freq_idx], avg_psd_unet, label='UNet Model', color='#7FDBFF', linewidth=2.5, zorder=3)
+        ax.fill_between(f_gt[high_freq_idx], avg_psd_unet - se_unet, avg_psd_unet + se_unet, color='#7FDBFF', alpha=0.2, zorder=2)
+        
+        ax.plot(f_gt[high_freq_idx], avg_psd_diffusion, label=f'Diffusion Model', color='#2ECC40', linewidth=2.5, zorder=3)
+        ax.fill_between(f_gt[high_freq_idx], avg_psd_diffusion - se_diffusion, avg_psd_diffusion + se_diffusion, color='#2ECC40', alpha=0.1, zorder=2)
+
+        ax.set_xlabel('Frequency (Hz)', fontsize=14, fontweight='bold')
+        ax.set_ylabel('Power Spectral Density (dB/Hz)', fontsize=14, fontweight='bold')
+        ax.set_yscale('log')
+        ax.set_xscale('log')
+        ax.set_title(f'Power Spectral Density Comparison\nNoise Level σ = {nl:.2f}', fontsize=16, fontweight='bold')
+        ax.legend(fontsize=12, loc='lower left', frameon=True, facecolor='white', edgecolor='none', shadow=True)
+        ax.grid(True, which="both", ls="--", alpha=0.3, color='gray')
+        
+        # Format ticks
+        ax.xaxis.set_major_formatter(ScalarFormatter())
+        ax.yaxis.set_major_formatter(ScalarFormatter())
+        ax.tick_params(axis='both', which='major', labelsize=12)
+        
+        # Add textbox with parameters
+        textstr = f'High Freq. Threshold: {high_freq_threshold}\nEpoch: {last_epoch}\nNoise Level (σ): {nl:.2f}'
+        props = dict(boxstyle='round,pad=0.5', facecolor='white', edgecolor='gray', alpha=0.8)
+        ax.text(0.95, 0.95, textstr, transform=ax.transAxes, fontsize=11,
+                verticalalignment='top', horizontalalignment='right', bbox=props)
+
         plt.tight_layout()
-        plt.savefig(os.path.join(save_dir, f'psd_comparison_high_freq_noise_level_{nl}.png'))
+        plt.savefig(os.path.join(save_dir, f'psd_comparison_noise_level_{nl:.2f}.png'), dpi=300, bbox_inches='tight')
         plt.close()
 
 def save_dists(metrics, last_epoch, save_dir):
@@ -336,8 +366,8 @@ def generate_comparison_plot(metrics, epochs, save_dir, use_bm3d=False):
     lpips_diffusion = np.array(metrics['lpips_diffusion'])
     lpips_unet = np.array(metrics['lpips_unet'])
     
-    # Check if BM3D data exists
-    use_bm3d = 'psnr_bm3d' in metrics and 'lpips_bm3d' in metrics
+    # Check if BM3D data exists and if use_bm3d is True
+    use_bm3d = use_bm3d and 'psnr_bm3d' in metrics and 'lpips_bm3d' in metrics
     if use_bm3d:
         psnr_bm3d = np.array(metrics['psnr_bm3d'])
         lpips_bm3d = np.array(metrics['lpips_bm3d'])
@@ -352,6 +382,8 @@ def generate_comparison_plot(metrics, epochs, save_dir, use_bm3d=False):
         avg_lpips_bm3d = [np.mean(lpips_bm3d[noise_levels == nl]) for nl in unique_noise_levels]
 
     fig, ax = plt.subplots(figsize=(12, 8))
+    # zoom out the plot by 20%
+    ax.set_xlim(ax.get_xlim()[0] - 0.2, ax.get_xlim()[1] + 0.2)
     
     # Create a colorblind-friendly colormap
     colors = ['#FFEDA0', '#FEB24C', '#F03B20']  # Light yellow to orange to dark red
@@ -359,17 +391,17 @@ def generate_comparison_plot(metrics, epochs, save_dir, use_bm3d=False):
     cmap = LinearSegmentedColormap.from_list("custom", colors, N=n_bins)
     
     # Plot with color gradient
-    scatter_diffusion = ax.scatter(avg_lpips_diffusion, avg_psnr_diffusion, 
-                                   c=unique_noise_levels, cmap=cmap, 
+    scatter_diffusion = ax.scatter(avg_lpips_diffusion, avg_psnr_diffusion,
+                                   c=unique_noise_levels, cmap=cmap,
                                    label='Diffusion Model', marker='*', s=200, edgecolors='black')
     
-    scatter_unet = ax.scatter(avg_lpips_unet, avg_psnr_unet, 
-                              c=unique_noise_levels, cmap=cmap, 
+    scatter_unet = ax.scatter(avg_lpips_unet, avg_psnr_unet,
+                              c=unique_noise_levels, cmap=cmap,
                               label='UNet Model', marker='o', s=200, edgecolors='black')
     
     if use_bm3d:
-        scatter_bm3d = ax.scatter(avg_lpips_bm3d, avg_psnr_bm3d, 
-                                  c=unique_noise_levels, cmap=cmap, 
+        scatter_bm3d = ax.scatter(avg_lpips_bm3d, avg_psnr_bm3d,
+                                  c=unique_noise_levels, cmap=cmap,
                                   label='BM3D', marker='^', s=200, edgecolors='black')
     
     # Add colorbar
@@ -383,16 +415,16 @@ def generate_comparison_plot(metrics, epochs, save_dir, use_bm3d=False):
     ax.grid(True, linestyle='--', alpha=0.7)
     
     # Add arrows to indicate better performance directions
-    ax.annotate('', xy=(0.05, 0.95), xytext=(0.15, 0.95), 
+    ax.annotate('', xy=(0.05, 0.95), xytext=(0.15, 0.95),
                 xycoords='axes fraction', textcoords='axes fraction',
-                arrowprops=dict(arrowstyle='<-', color='gray'))
-    ax.text(0.1, 0.97, 'Better LPIPS', ha='center', va='center', 
+                arrowprops=dict(arrowstyle='->', color='gray'))
+    ax.text(0.1, 0.97, 'Better LPIPS', ha='center', va='center',
             transform=ax.transAxes, fontsize=10, color='gray')
 
-    ax.annotate('', xy=(0.95, 0.85), xytext=(0.95, 0.95), 
+    ax.annotate('', xy=(0.95, 0.85), xytext=(0.95, 0.95),
                 xycoords='axes fraction', textcoords='axes fraction',
                 arrowprops=dict(arrowstyle='<-', color='gray'))
-    ax.text(0.97, 0.9, 'Better PSNR', ha='center', va='center', 
+    ax.text(0.97, 0.9, 'Better PSNR', ha='center', va='center',
             transform=ax.transAxes, fontsize=10, color='gray', rotation=90)
 
     plt.tight_layout()
