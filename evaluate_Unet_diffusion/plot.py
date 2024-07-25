@@ -475,52 +475,78 @@ def save_metrics(metrics, last_epoch, use_bm3d, save_dir):
     unique_noise_levels = sorted(np.unique(noise_levels))
 
     avg_psnr_degraded = [np.mean(psnr_degraded[noise_levels == nl]) for nl in unique_noise_levels]
+    sem_psnr_degraded = [np.std(psnr_degraded[noise_levels == nl]) / np.sqrt(np.sum(noise_levels == nl)) for nl in unique_noise_levels]
+    
     avg_psnr_diffusion_last = [np.mean(psnr_diffusion[(noise_levels == nl) & (np.array(metrics['epoch']) == last_epoch)]) for nl in unique_noise_levels]
+    sem_psnr_diffusion_last = [np.std(psnr_diffusion[(noise_levels == nl) & (np.array(metrics['epoch']) == last_epoch)]) / np.sqrt(np.sum((noise_levels == nl) & (np.array(metrics['epoch']) == last_epoch))) for nl in unique_noise_levels]
+
     avg_psnr_unet = [np.mean(psnr_unet[noise_levels == nl]) for nl in unique_noise_levels]
-    avg_psnr_bm3d = [np.mean(psnr_bm3d[noise_levels == nl]) for nl in unique_noise_levels] if use_bm3d else []
+    sem_psnr_unet = [np.std(psnr_unet[noise_levels == nl]) / np.sqrt(np.sum(noise_levels == nl)) for nl in unique_noise_levels]
+
+    if use_bm3d:
+        avg_psnr_bm3d = [np.mean(psnr_bm3d[noise_levels == nl]) for nl in unique_noise_levels]
+        sem_psnr_bm3d = [np.std(psnr_bm3d[noise_levels == nl]) / np.sqrt(np.sum(noise_levels == nl)) for nl in unique_noise_levels]
+
     avg_ssim_degraded = [np.mean(ssim_degraded[noise_levels == nl]) for nl in unique_noise_levels]
+    sem_ssim_degraded = [np.std(ssim_degraded[noise_levels == nl]) / np.sqrt(np.sum(noise_levels == nl)) for nl in unique_noise_levels]
+
     avg_ssim_diffusion_last = [np.mean(ssim_diffusion[(noise_levels == nl) & (np.array(metrics['epoch']) == last_epoch)]) for nl in unique_noise_levels]
+    sem_ssim_diffusion_last = [np.std(ssim_diffusion[(noise_levels == nl) & (np.array(metrics['epoch']) == last_epoch)]) / np.sqrt(np.sum((noise_levels == nl) & (np.array(metrics['epoch']) == last_epoch))) for nl in unique_noise_levels]
+
     avg_ssim_unet = [np.mean(ssim_unet[noise_levels == nl]) for nl in unique_noise_levels]
-    avg_ssim_bm3d = [np.mean(ssim_bm3d[noise_levels == nl]) for nl in unique_noise_levels] if use_bm3d else []
+    sem_ssim_unet = [np.std(ssim_unet[noise_levels == nl]) / np.sqrt(np.sum(noise_levels == nl)) for nl in unique_noise_levels]
+
+    if use_bm3d:
+        avg_ssim_bm3d = [np.mean(ssim_bm3d[noise_levels == nl]) for nl in unique_noise_levels]
+        sem_ssim_bm3d = [np.std(ssim_bm3d[noise_levels == nl]) / np.sqrt(np.sum(noise_levels == nl)) for nl in unique_noise_levels]
+
     avg_lpips_degraded = [np.mean(lpips_degraded[noise_levels == nl]) for nl in unique_noise_levels]
+    sem_lpips_degraded = [np.std(lpips_degraded[noise_levels == nl]) / np.sqrt(np.sum(noise_levels == nl)) for nl in unique_noise_levels]
+
     avg_lpips_diffusion_last = [np.mean(lpips_diffusion[(noise_levels == nl) & (np.array(metrics['epoch']) == last_epoch)]) for nl in unique_noise_levels]
+    sem_lpips_diffusion_last = [np.std(lpips_diffusion[(noise_levels == nl) & (np.array(metrics['epoch']) == last_epoch)]) / np.sqrt(np.sum((noise_levels == nl) & (np.array(metrics['epoch']) == last_epoch))) for nl in unique_noise_levels]
+
     avg_lpips_unet = [np.mean(lpips_unet[noise_levels == nl]) for nl in unique_noise_levels]
-    avg_lpips_bm3d = [np.mean(lpips_bm3d[noise_levels == nl]) for nl in unique_noise_levels] if use_bm3d else []
+    sem_lpips_unet = [np.std(lpips_unet[noise_levels == nl]) / np.sqrt(np.sum(noise_levels == nl)) for nl in unique_noise_levels]
 
-    fig, axs = plt.subplots(3, 2, figsize=(20, 18))
-
-    axs[0, 0].plot(unique_noise_levels, avg_psnr_degraded, 'o-', label='Degraded', color='red')
-    axs[0, 0].plot(unique_noise_levels, avg_psnr_unet, 'o-', label='UNet Model', color='purple')
-    axs[0, 0].plot(unique_noise_levels, avg_psnr_diffusion_last, 'o-', label=f'Diffusion Model (Epoch {last_epoch})', color='green')
     if use_bm3d:
-        axs[0, 0].plot(unique_noise_levels, avg_psnr_bm3d, 'o-', label='BM3D', color='blue')
-    axs[0, 0].set_xlabel('Noise Standard Deviation')
-    axs[0, 0].set_ylabel('PSNR')
-    axs[0, 0].set_title('PSNR value variation curve')
-    axs[0, 0].legend()
-    axs[0, 0].grid()
+        avg_lpips_bm3d = [np.mean(lpips_bm3d[noise_levels == nl]) for nl in unique_noise_levels]
+        sem_lpips_bm3d = [np.std(lpips_bm3d[noise_levels == nl]) / np.sqrt(np.sum(noise_levels == nl)) for nl in unique_noise_levels]
 
-    axs[1, 0].plot(unique_noise_levels, avg_ssim_degraded, 'o-', label='Degraded', color='red')
-    axs[1, 0].plot(unique_noise_levels, avg_ssim_unet, 'o-', label='UNet Model', color='purple')
-    axs[1, 0].plot(unique_noise_levels, avg_ssim_diffusion_last, 'o-', label=f'Diffusion Model (Epoch {last_epoch})', color='green')
-    if use_bm3d:
-        axs[1, 0].plot(unique_noise_levels, avg_ssim_bm3d, 'o-', label='BM3D', color='blue')
-    axs[1, 0].set_xlabel('Noise Standard Deviation')
-    axs[1, 0].set_ylabel('SSIM')
-    axs[1, 0].set_title('SSIM value variation curve')
-    axs[1, 0].legend()
-    axs[1, 0].grid()
+    fig, axs = plt.subplots(3, 2, figsize=(20, 18), constrained_layout=True)
 
-    axs[2, 0].plot(unique_noise_levels, avg_lpips_degraded, 'o-', label='Degraded', color='red')
-    axs[2, 0].plot(unique_noise_levels, avg_lpips_unet, 'o-', label='UNet Model', color='purple')
-    axs[2, 0].plot(unique_noise_levels, avg_lpips_diffusion_last, 'o-', label=f'Diffusion Model (Epoch {last_epoch})', color='green')
+    axs[0, 0].errorbar(unique_noise_levels, avg_psnr_degraded, yerr=sem_psnr_degraded, fmt='o-', label='Degraded', color=pale_red, capsize=5, capthick=2, elinewidth=1)
+    axs[0, 0].errorbar(unique_noise_levels, avg_psnr_unet, yerr=sem_psnr_unet, fmt='o-', label='UNet Model', color=pale_purple, capsize=5, capthick=2, elinewidth=1)
+    axs[0, 0].errorbar(unique_noise_levels, avg_psnr_diffusion_last, yerr=sem_psnr_diffusion_last, fmt='o-', label=f'Diffusion Model (Epoch {last_epoch})', color=pale_green, capsize=5, capthick=2, elinewidth=1)
     if use_bm3d:
-        axs[2, 0].plot(unique_noise_levels, avg_lpips_bm3d, 'o-', label='BM3D', color='blue')
-    axs[2, 0].set_xlabel('Noise Standard Deviation')
-    axs[2, 0].set_ylabel('LPIPS')
-    axs[2, 0].set_title('LPIPS value variation curve')
-    axs[2, 0].legend()
-    axs[2, 0].grid()
+        axs[0, 0].errorbar(unique_noise_levels, avg_psnr_bm3d, yerr=sem_psnr_bm3d, fmt='o-', label='BM3D', color=pale_blue, capsize=5, capthick=2, elinewidth=1)
+    axs[0, 0].set_xlabel(r'Noise Standard Deviation ($\sigma$)', fontsize=14, fontweight='bold')
+    axs[0, 0].set_ylabel('PSNR', fontsize=14, fontweight='bold')
+    axs[0, 0].set_title('PSNR Value Variation Curve', fontsize=16, fontweight='bold')
+    axs[0, 0].legend(fontsize=12)
+    axs[0, 0].grid(True, which="both", ls="--", alpha=0.3, color='gray')
+
+    axs[1, 0].errorbar(unique_noise_levels, avg_ssim_degraded, yerr=sem_ssim_degraded, fmt='o-', label='Degraded', color=pale_red, capsize=5, capthick=2, elinewidth=1)
+    axs[1, 0].errorbar(unique_noise_levels, avg_ssim_unet, yerr=sem_ssim_unet, fmt='o-', label='UNet Model', color=pale_purple, capsize=5, capthick=2, elinewidth=1)
+    axs[1, 0].errorbar(unique_noise_levels, avg_ssim_diffusion_last, yerr=sem_ssim_diffusion_last, fmt='o-', label=f'Diffusion Model (Epoch {last_epoch})', color=pale_green, capsize=5, capthick=2, elinewidth=1)
+    if use_bm3d:
+        axs[1, 0].errorbar(unique_noise_levels, avg_ssim_bm3d, yerr=sem_ssim_bm3d, fmt='o-', label='BM3D', color=pale_blue, capsize=5, capthick=2, elinewidth=1)
+    axs[1, 0].set_xlabel(r'Noise Standard Deviation ($\sigma$)', fontsize=14, fontweight='bold')
+    axs[1, 0].set_ylabel('SSIM', fontsize=14, fontweight='bold')
+    axs[1, 0].set_title('SSIM Value Variation Curve', fontsize=16, fontweight='bold')
+    axs[1, 0].legend(fontsize=12)
+    axs[1, 0].grid(True, which="both", ls="--", alpha=0.3, color='gray')
+
+    axs[2, 0].errorbar(unique_noise_levels, avg_lpips_degraded, yerr=sem_lpips_degraded, fmt='o-', label='Degraded', color=pale_red, capsize=5, capthick=2, elinewidth=1)
+    axs[2, 0].errorbar(unique_noise_levels, avg_lpips_unet, yerr=sem_lpips_unet, fmt='o-', label='UNet Model', color=pale_purple, capsize=5, capthick=2, elinewidth=1)
+    axs[2, 0].errorbar(unique_noise_levels, avg_lpips_diffusion_last, yerr=sem_lpips_diffusion_last, fmt='o-', label=f'Diffusion Model (Epoch {last_epoch})', color=pale_green, capsize=5, capthick=2, elinewidth=1)
+    if use_bm3d:
+        axs[2, 0].errorbar(unique_noise_levels, avg_lpips_bm3d, yerr=sem_lpips_bm3d, fmt='o-', label='BM3D', color=pale_blue, capsize=5, capthick=2, elinewidth=1)
+    axs[2, 0].set_xlabel(r'Noise Standard Deviation ($\sigma$)', fontsize=14, fontweight='bold')
+    axs[2, 0].set_ylabel('LPIPS', fontsize=14, fontweight='bold')
+    axs[2, 0].set_title('LPIPS Value Variation Curve', fontsize=16, fontweight='bold')
+    axs[2, 0].legend(fontsize=12)
+    axs[2, 0].grid(True, which="both", ls="--", alpha=0.3, color='gray')
 
     colors = ['blue', 'orange', 'cyan', 'magenta', 'black', 'yellow', 'green', 'red']
     for idx, epoch in enumerate(epochs):
@@ -528,31 +554,37 @@ def save_metrics(metrics, last_epoch, use_bm3d, save_dir):
         unique_noise_levels = sorted(np.unique(noise_levels[epoch_indices]))
 
         avg_psnr_diffusion = [np.mean(psnr_diffusion[epoch_indices][noise_levels[epoch_indices] == nl]) for nl in unique_noise_levels]
+        sem_psnr_diffusion = [np.std(psnr_diffusion[epoch_indices][noise_levels[epoch_indices] == nl]) / np.sqrt(np.sum(noise_levels[epoch_indices] == nl)) for nl in unique_noise_levels]
+
         avg_ssim_diffusion = [np.mean(ssim_diffusion[epoch_indices][noise_levels[epoch_indices] == nl]) for nl in unique_noise_levels]
+        sem_ssim_diffusion = [np.std(ssim_diffusion[epoch_indices][noise_levels[epoch_indices] == nl]) / np.sqrt(np.sum(noise_levels[epoch_indices] == nl)) for nl in unique_noise_levels]
+
         avg_lpips_diffusion = [np.mean(lpips_diffusion[epoch_indices][noise_levels[epoch_indices] == nl]) for nl in unique_noise_levels]
+        sem_lpips_diffusion = [np.std(lpips_diffusion[epoch_indices][noise_levels[epoch_indices] == nl]) / np.sqrt(np.sum(noise_levels[epoch_indices] == nl)) for nl in unique_noise_levels]
 
-        axs[0, 1].plot(unique_noise_levels, avg_psnr_diffusion, 'o-', label=f'Diffusion Model (Epoch {epoch})', color=colors[idx % len(colors)])
-        axs[1, 1].plot(unique_noise_levels, avg_ssim_diffusion, 'o-', label=f'Diffusion Model (Epoch {epoch})', color=colors[idx % len(colors)])
-        axs[2, 1].plot(unique_noise_levels, avg_lpips_diffusion, 'o-', label=f'Diffusion Model (Epoch {epoch})', color=colors[idx % len(colors)])
+        axs[0, 1].errorbar(unique_noise_levels, avg_psnr_diffusion, yerr=sem_psnr_diffusion, fmt='o-', label=f'Diffusion Model (Epoch {epoch})', color=colors[idx % len(colors)], capsize=5, capthick=2, elinewidth=1)
+        axs[1, 1].errorbar(unique_noise_levels, avg_ssim_diffusion, yerr=sem_ssim_diffusion, fmt='o-', label=f'Diffusion Model (Epoch {epoch})', color=colors[idx % len(colors)], capsize=5, capthick=2, elinewidth=1)
+        axs[2, 1].errorbar(unique_noise_levels, avg_lpips_diffusion, yerr=sem_lpips_diffusion, fmt='o-', label=f'Diffusion Model (Epoch {epoch})', color=colors[idx % len(colors)], capsize=5, capthick=2, elinewidth=1)
 
-    axs[0, 1].set_xlabel('Noise Standard Deviation')
-    axs[0, 1].set_ylabel('PSNR')
-    axs[0, 1].set_title('PSNR value variation curve (Diffusion Model)')
-    axs[0, 1].legend()
-    axs[0, 1].grid()
+    axs[0, 1].set_xlabel(r'Noise Standard Deviation ($\sigma$)', fontsize=14, fontweight='bold')
+    axs[0, 1].set_ylabel('PSNR', fontsize=14, fontweight='bold')
+    axs[0, 1].set_title('PSNR Value Variation Curve (Diffusion Model)', fontsize=16, fontweight='bold')
+    axs[0, 1].legend(fontsize=12)
+    axs[0, 1].grid(True, which="both", ls="--", alpha=0.3, color='gray')
 
-    axs[1, 1].set_xlabel('Noise Standard Deviation')
-    axs[1, 1].set_ylabel('SSIM')
-    axs[1, 1].set_title('SSIM value variation curve (Diffusion Model)')
-    axs[1, 1].legend()
-    axs[1, 1].grid()
+    axs[1, 1].set_xlabel(r'Noise Standard Deviation ($\sigma$)', fontsize=14, fontweight='bold')
+    axs[1, 1].set_ylabel('SSIM', fontsize=14, fontweight='bold')
+    axs[1, 1].set_title('SSIM Value Variation Curve (Diffusion Model)', fontsize=16, fontweight='bold')
+    axs[1, 1].legend(fontsize=12)
+    axs[1, 1].grid(True, which="both", ls="--", alpha=0.3, color='gray')
 
-    axs[2, 1].set_xlabel('Noise Standard Deviation')
-    axs[2, 1].set_ylabel('LPIPS')
-    axs[2, 1].set_title('LPIPS value variation curve (Diffusion Model)')
-    axs[2, 1].legend()
-    axs[2, 1].grid()
+    axs[2, 1].set_xlabel(r'Noise Standard Deviation ($\sigma$)', fontsize=14, fontweight='bold')
+    axs[2, 1].set_ylabel('LPIPS', fontsize=14, fontweight='bold')
+    axs[2, 1].set_title('LPIPS Value Variation Curve (Diffusion Model)', fontsize=16, fontweight='bold')
+    axs[2, 1].legend(fontsize=12)
+    axs[2, 1].grid(True, which="both", ls="--", alpha=0.3, color='gray')
 
     plt.tight_layout()
-    plt.savefig(os.path.join(save_dir, 'metrics.png'))
+    plt.savefig(os.path.join(save_dir, 'metrics.png'), dpi=300, bbox_inches='tight')
     plt.close()
+
