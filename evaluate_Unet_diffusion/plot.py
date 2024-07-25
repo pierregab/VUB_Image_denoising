@@ -6,6 +6,17 @@ from matplotlib.colors import LinearSegmentedColormap
 from matplotlib.ticker import ScalarFormatter
 from mpl_toolkits.axes_grid1 import ImageGrid
 
+# Use the same palette for all plots (pale colors)
+pale_red = '#FF4136'
+pale_blue = '#0074D9'
+pale_green = '#2ECC40'
+pale_yellow = '#FFDC00'
+pale_purple = '#B10DC9'
+
+# Enable LaTeX rendering
+plt.rc('text', usetex=True)
+plt.rc('font', family='serif')
+
 def save_example_images(example_images, save_dir):
     noise_levels_to_plot = [10, 30, 50]
     filtered_images = {k: v for k, v in example_images.items() if k in noise_levels_to_plot}
@@ -15,13 +26,13 @@ def save_example_images(example_images, save_dir):
         print("No example images to plot.")
         return
     
-    fig = plt.figure(figsize=(16, 5 * num_levels))
+    fig = plt.figure(figsize=(16, 5 * num_levels), constrained_layout=True)
     grid = ImageGrid(fig, 111,
                      nrows_ncols=(num_levels, 4),
                      axes_pad=0.6,
                      share_all=True,
                      )
-    
+
     # Function to process and prepare image for plotting
     def process_image(img):
         img_np = np.array(img)
@@ -36,22 +47,20 @@ def save_example_images(example_images, save_dir):
         gt_image, degraded_image, predicted_unet_image, predicted_diffusion_image = images
         
         images_to_plot = [
-            ("Ground Truth", process_image(gt_image)),
-            ("Noisy", process_image(degraded_image)),
-            ("Denoised (UNet)", process_image(predicted_unet_image)),
-            ("Denoised (Diffusion)", process_image(predicted_diffusion_image))
+            (r"Ground Truth", process_image(gt_image)),
+            (r"Noisy", process_image(degraded_image)),
+            (r"Denoised (UNet)", process_image(predicted_unet_image)),
+            (r"Denoised (Diffusion)", process_image(predicted_diffusion_image))
         ]
         
         for j, (title, img) in enumerate(images_to_plot):
             ax = grid[i*4 + j]
             im = ax.imshow(img, cmap='gray' if img.ndim == 2 else None, vmin=vmin, vmax=vmax)
-            ax.set_title(f"{title}\n(σ = {sigma})", fontsize=12, fontweight='bold')
+            ax.set_title(rf"{title}\\ ($\sigma$ = {sigma})", fontsize=12, fontweight='bold')
             ax.axis('off')
             
+    plt.suptitle(r"Image Denoising Comparison Across Noise Levels", fontsize=16, fontweight='bold', y=1)
     
-    plt.suptitle("Image Denoising Comparison Across Noise Levels", fontsize=16, fontweight='bold', y=1)
-    
-    plt.tight_layout()
     plt.savefig(os.path.join(save_dir, 'example_images_comparison.png'), dpi=300, bbox_inches='tight')
     plt.close()
 
@@ -59,7 +68,7 @@ def save_error_map(gt_image, predicted_image, save_dir):
     error_map = np.abs(gt_image - predicted_image)
     plt.imshow(error_map, cmap='hot', interpolation='nearest')
     plt.colorbar()
-    plt.title('Error Map')
+    plt.title(r'Error Map', fontsize=14, fontweight='bold')
     plt.savefig(os.path.join(save_dir, 'error_map.png'))
     plt.close()
 
@@ -72,7 +81,7 @@ def save_histograms_of_differences(example_images, last_epoch, save_dir):
         print("No example images to plot.")
         return
 
-    fig, axs = plt.subplots(num_levels, 2, figsize=(20, 5 * num_levels))
+    fig, axs = plt.subplots(num_levels, 2, figsize=(20, 5 * num_levels), constrained_layout=True)
 
     # Ensure axs is a 2D array even if num_levels is 1
     if num_levels == 1:
@@ -84,23 +93,21 @@ def save_histograms_of_differences(example_images, last_epoch, save_dir):
         differences_unet = (gt_image - predicted_unet_image).flatten()
         differences_diffusion = (gt_image - predicted_diffusion_image).flatten()
 
-        axs[i, 0].hist(differences_unet, bins=50, color='blue', alpha=0.7)
-        axs[i, 0].set_title(f'Histogram of Differences (UNet) - Epoch: {epoch}, Sigma: {sigma}')
-        axs[i, 0].set_xlabel('Difference')
-        axs[i, 0].set_ylabel('Frequency')
+        axs[i, 0].hist(differences_unet, bins=50, color=pale_blue, alpha=0.7)
+        axs[i, 0].set_title(rf'Histogram of Differences (UNet) - Epoch: {epoch}, $\sigma$: {sigma}', fontsize=14, fontweight='bold')
+        axs[i, 0].set_xlabel(r'Difference', fontsize=12)
+        axs[i, 0].set_ylabel(r'Frequency', fontsize=12)
 
-        axs[i, 1].hist(differences_diffusion, bins=50, color='green', alpha=0.7)
-        axs[i, 1].set_title(f'Histogram of Differences (Diffusion) - Epoch: {epoch}, Sigma: {sigma}')
-        axs[i, 1].set_xlabel('Difference')
-        axs[i, 1].set_ylabel('Frequency')
+        axs[i, 1].hist(differences_diffusion, bins=50, color=pale_green, alpha=0.7)
+        axs[i, 1].set_title(rf'Histogram of Differences (Diffusion) - Epoch: {epoch}, $\sigma$: {sigma}', fontsize=14, fontweight='bold')
+        axs[i, 1].set_xlabel(r'Difference', fontsize=12)
+        axs[i, 1].set_ylabel(r'Frequency', fontsize=12)
 
-    plt.tight_layout()
-    plt.savefig(os.path.join(save_dir, 'histograms_of_differences.png'))
+    plt.savefig(os.path.join(save_dir, 'histograms_of_differences.png'), dpi=300)
     plt.close()
 
-
 def save_heatmaps(aggregated_diff_map_unet, aggregated_diff_map_diffusion, save_dir):
-    fig, axs = plt.subplots(1, 2, figsize=(20, 10))
+    fig, axs = plt.subplots(1, 2, figsize=(20, 10), constrained_layout=True)
 
     if aggregated_diff_map_unet.ndim == 3:
         aggregated_diff_map_unet = np.mean(aggregated_diff_map_unet, axis=0)
@@ -111,15 +118,14 @@ def save_heatmaps(aggregated_diff_map_unet, aggregated_diff_map_diffusion, save_
     vmax = max(aggregated_diff_map_unet.max(), aggregated_diff_map_diffusion.max())
 
     im_unet = axs[0].imshow(aggregated_diff_map_unet, cmap='hot', interpolation='nearest', vmin=vmin, vmax=vmax)
-    axs[0].set_title('Aggregated Difference Map (UNet)')
+    axs[0].set_title(r'Aggregated Difference Map (UNet)', fontsize=14, fontweight='bold')
     fig.colorbar(im_unet, ax=axs[0], orientation='vertical')
 
     im_diffusion = axs[1].imshow(aggregated_diff_map_diffusion, cmap='hot', interpolation='nearest', vmin=vmin, vmax=vmax)
-    axs[1].set_title('Aggregated Difference Map (Diffusion)')
+    axs[1].set_title(r'Aggregated Difference Map (Diffusion)', fontsize=14, fontweight='bold')
     fig.colorbar(im_diffusion, ax=axs[1], orientation='vertical')
 
-    plt.tight_layout()
-    plt.savefig(os.path.join(save_dir, 'heatmaps.png'))
+    plt.savefig(os.path.join(save_dir, 'heatmaps.png'), dpi=300)
     plt.close()
 
 def save_frequency_domain_analysis(metrics, last_epoch, save_dir, high_freq_threshold=0.5):
@@ -162,26 +168,26 @@ def save_frequency_domain_analysis(metrics, last_epoch, save_dir, high_freq_thre
         sem_mae_diff_unet.append(np.std(mae_diff_unet) / np.sqrt(len(mae_diff_unet)))
         sem_mae_diff_diffusion.append(np.std(mae_diff_diffusion) / np.sqrt(len(mae_diff_diffusion)))
 
-    fig, ax = plt.subplots(figsize=(12, 8))
+    fig, ax = plt.subplots(figsize=(12, 8), constrained_layout=True)
 
     # Plot with error bands
-    ax.plot(unique_noise_levels, avg_mae_diff_unet, '-', label='UNet Model', color='#7FDBFF', linewidth=2.5, marker='o', markersize=8)
+    ax.plot(unique_noise_levels, avg_mae_diff_unet, '-', label=r'UNet Model', color=pale_blue, linewidth=2.5, marker='o', markersize=8)
     ax.fill_between(unique_noise_levels, 
                     np.array(avg_mae_diff_unet) - np.array(sem_mae_diff_unet),
                     np.array(avg_mae_diff_unet) + np.array(sem_mae_diff_unet),
-                    color='#7FDBFF', alpha=0.2)
+                    color=pale_blue, alpha=0.2)
 
-    ax.plot(unique_noise_levels, avg_mae_diff_diffusion, '-', label='Diffusion Model', color='#2ECC40', linewidth=2.5, marker='s', markersize=8)
+    ax.plot(unique_noise_levels, avg_mae_diff_diffusion, '-', label=r'Diffusion Model', color=pale_green, linewidth=2.5, marker='s', markersize=8)
     ax.fill_between(unique_noise_levels, 
                     np.array(avg_mae_diff_diffusion) - np.array(sem_mae_diff_diffusion),
                     np.array(avg_mae_diff_diffusion) + np.array(sem_mae_diff_diffusion),
-                    color='#2ECC40', alpha=0.2)
+                    color=pale_green, alpha=0.2)
 
-    ax.set_xlabel('Noise Standard Deviation (σ)', fontsize=14, fontweight='bold')
-    ax.set_ylabel('MAE in High-Frequency Domain', fontsize=14, fontweight='bold')
-    ax.set_title('High-Frequency Domain Analysis of Denoising Models', fontsize=16, fontweight='bold')
+    ax.set_xlabel(r'Noise Standard Deviation ($\sigma$)', fontsize=14, fontweight='bold')
+    ax.set_ylabel(r'MAE in High-Frequency Domain', fontsize=14, fontweight='bold')
+    ax.set_title(r'High-Frequency Domain Analysis of Denoising Models', fontsize=16, fontweight='bold')
 
-    ax.legend(fontsize=12, loc='upper right', frameon=True, facecolor='white', edgecolor='none', shadow=True)
+    ax.legend(fontsize=12, loc='upper right', frameon=True, facecolor='white', edgecolor='none')
     ax.grid(True, which="both", ls="--", alpha=0.3, color='gray')
 
     # Format ticks
@@ -193,12 +199,11 @@ def save_frequency_domain_analysis(metrics, last_epoch, save_dir, high_freq_thre
     ax.set_yscale('log')
 
     # Add textbox with parameters
-    textstr = f'High Freq. Threshold: {high_freq_threshold}\nEpoch: {last_epoch}'
+    textstr = rf'High Freq. Threshold: {high_freq_threshold}\\ Epoch: {last_epoch}'
     props = dict(boxstyle='round,pad=0.5', facecolor='white', edgecolor='gray', alpha=0.8)
     ax.text(0.05, 0.95, textstr, transform=ax.transAxes, fontsize=11,
             verticalalignment='top', bbox=props)
 
-    plt.tight_layout()
     plt.savefig(os.path.join(save_dir, 'high_frequency_domain_analysis.png'), dpi=300, bbox_inches='tight')
     plt.close()
 
@@ -241,27 +246,25 @@ def save_frequency_domain_analysis_multiple_epochs(metrics, epochs, save_dir, hi
         for epoch in epochs:
             avg_mae_diff_diffusion[epoch].append(np.mean(mae_diff_diffusion[epoch]))
 
-    plt.figure(figsize=(10, 6))
-    plt.plot(unique_noise_levels, avg_mae_diff_unet, 'o-', label='UNet Model', color='purple')
-    colors = ['green', 'blue', 'orange', 'red', 'black', 'brown', 'pink', 'gray', 'cyan', 'magenta']
+    plt.figure(figsize=(10, 6), constrained_layout=True)
+    plt.plot(unique_noise_levels, avg_mae_diff_unet, 'o-', label=r'UNet Model', color=pale_purple)
+    colors = [pale_green, pale_blue, pale_red, pale_yellow, 'black', 'brown', 'pink', 'gray', 'cyan', 'magenta']
     for idx, epoch in enumerate(epochs):
-        plt.plot(unique_noise_levels, avg_mae_diff_diffusion[epoch], 'o-', label=f'Diffusion Model (Epoch {epoch})', color=colors[idx % len(colors)])
-    plt.xlabel('Noise Standard Deviation')
-    plt.ylabel('MAE in High-Frequency Domain')
-    plt.title('MAE in High-Frequency Domain Analysis')
+        plt.plot(unique_noise_levels, avg_mae_diff_diffusion[epoch], 'o-', label=rf'Diffusion Model (Epoch {epoch})', color=colors[idx % len(colors)])
+    plt.xlabel(r'Noise Standard Deviation ($\sigma$)', fontsize=14)
+    plt.ylabel(r'MAE in High-Frequency Domain', fontsize=14)
+    plt.title(r'MAE in High-Frequency Domain Analysis', fontsize=16)
     plt.legend()
     plt.grid()
-    plt.tight_layout()
     plt.savefig(os.path.join(save_dir, 'high_frequency_domain_analysis_multiple_epochs.png'))
     plt.close()
 
 def plot_psd_comparison(metrics, last_epoch, save_dir, high_freq_threshold=0.5):
-    epochs = sorted(set(metrics['epoch']))
     noise_levels = np.array(metrics['noise_level'])
     unique_noise_levels = sorted(np.unique(noise_levels))
     
     # Create a colorblind-friendly colormap
-    colors = ['#FFEDA0', '#FEB24C', '#F03B20']  # Light yellow to orange to dark red
+    colors = [pale_yellow, pale_red, pale_green]  # Light yellow to orange to dark red
     n_bins = len(unique_noise_levels)
     cmap = LinearSegmentedColormap.from_list("custom", colors, N=n_bins)
     
@@ -302,7 +305,7 @@ def plot_psd_comparison(metrics, last_epoch, save_dir, high_freq_threshold=0.5):
         se_unet = np.std(psd_unet_all, axis=0) / np.sqrt(len(psd_unet_all))
         se_diffusion = np.std(psd_diffusion_all, axis=0) / np.sqrt(len(psd_diffusion_all))
 
-        fig, ax = plt.subplots(figsize=(14, 8))
+        fig, ax = plt.subplots(figsize=(14, 8), constrained_layout=True)
         
         # Plot with error bands
         ax.plot(f_gt[high_freq_idx], avg_psd_gt, label='Ground Truth', color='#000000', linewidth=2.5, zorder=5)
@@ -317,12 +320,12 @@ def plot_psd_comparison(metrics, last_epoch, save_dir, high_freq_threshold=0.5):
         ax.plot(f_gt[high_freq_idx], avg_psd_diffusion, label=f'Diffusion Model', color='#2ECC40', linewidth=2.5, zorder=3)
         ax.fill_between(f_gt[high_freq_idx], avg_psd_diffusion - se_diffusion, avg_psd_diffusion + se_diffusion, color='#2ECC40', alpha=0.1, zorder=2)
 
-        ax.set_xlabel('Frequency (Hz)', fontsize=14, fontweight='bold')
-        ax.set_ylabel('Power Spectral Density (dB/Hz)', fontsize=14, fontweight='bold')
+        ax.set_xlabel(r'Frequency (Hz)', fontsize=14, fontweight='bold')
+        ax.set_ylabel(r'Power Spectral Density (dB/Hz)', fontsize=14, fontweight='bold')
         ax.set_yscale('log')
         ax.set_xscale('log')
-        ax.set_title(f'Power Spectral Density Comparison\nNoise Level σ = {nl:.2f}', fontsize=16, fontweight='bold')
-        ax.legend(fontsize=12, loc='lower left', frameon=True, facecolor='white', edgecolor='none', shadow=True)
+        ax.set_title(rf'Power Spectral Density Comparison\\Noise Level $\sigma$ = {nl:.2f}', fontsize=16, fontweight='bold')
+        ax.legend(fontsize=12, loc='lower left', frameon=True, facecolor='white', edgecolor='none')
         ax.grid(True, which="both", ls="--", alpha=0.3, color='gray')
         
         # Format ticks
@@ -331,17 +334,15 @@ def plot_psd_comparison(metrics, last_epoch, save_dir, high_freq_threshold=0.5):
         ax.tick_params(axis='both', which='major', labelsize=12)
         
         # Add textbox with parameters
-        textstr = f'High Freq. Threshold: {high_freq_threshold}\nEpoch: {last_epoch}\nNoise Level (σ): {nl:.2f}'
+        textstr = rf'High Freq. Threshold: {high_freq_threshold}\\ Epoch: {last_epoch}\\ Noise Level ($\sigma$): {nl:.2f}'
         props = dict(boxstyle='round,pad=0.5', facecolor='white', edgecolor='gray', alpha=0.8)
         ax.text(0.95, 0.95, textstr, transform=ax.transAxes, fontsize=11,
                 verticalalignment='top', horizontalalignment='right', bbox=props)
 
-        plt.tight_layout()
         plt.savefig(os.path.join(save_dir, f'psd_comparison_noise_level_{nl:.2f}.png'), dpi=300, bbox_inches='tight')
         plt.close()
 
 def save_dists(metrics, last_epoch, save_dir):
-    epochs = sorted(set(metrics['epoch']))
     noise_levels = np.array(metrics['noise_level'])
     dists_degraded = np.array(metrics['dists_degraded'])
     dists_diffusion = np.array(metrics['dists_diffusion'])
@@ -355,35 +356,34 @@ def save_dists(metrics, last_epoch, save_dir):
     avg_dists_unet = [np.mean(dists_unet[noise_levels == nl]) for nl in unique_noise_levels]
     avg_dists_bm3d = [np.mean(dists_bm3d[noise_levels == nl]) for nl in unique_noise_levels]
 
-    fig, axs = plt.subplots(1, 1, figsize=(10, 6))
+    fig, axs = plt.subplots(1, 1, figsize=(10, 6), constrained_layout=True)
 
-    axs.plot(unique_noise_levels, avg_dists_degraded, 'o-', label='Degraded', color='red')
-    axs.plot(unique_noise_levels, avg_dists_unet, 'o-', label='UNet Model', color='purple')
-    axs.plot(unique_noise_levels, avg_dists_diffusion_last, 'o-', label=f'Diffusion Model (Epoch {last_epoch})', color='green')
-    axs.plot(unique_noise_levels, avg_dists_bm3d, 'o-', label='BM3D', color='blue')
+    axs.plot(unique_noise_levels, avg_dists_degraded, 'o-', label=r'Degraded', color=pale_red)
+    axs.plot(unique_noise_levels, avg_dists_unet, 'o-', label=r'UNet Model', color=pale_purple)
+    axs.plot(unique_noise_levels, avg_dists_diffusion_last, 'o-', label=rf'Diffusion Model (Epoch {last_epoch})', color=pale_green)
+    axs.plot(unique_noise_levels, avg_dists_bm3d, 'o-', label=r'BM3D', color=pale_blue)
 
-    axs.set_xlabel('Noise Standard Deviation')
-    axs.set_ylabel('DISTS')
-    axs.set_title('DISTS value variation curve')
-    axs.legend()
-    axs.grid()
+    axs.set_xlabel(r'Noise Standard Deviation ($\sigma$)', fontsize=14, fontweight='bold')
+    axs.set_ylabel(r'DISTS', fontsize=14, fontweight='bold')
+    axs.set_title(r'DISTS Value Variation', fontsize=16, fontweight='bold')
+    axs.legend(fontsize=12)
+    axs.grid(True, which="both", ls="--", alpha=0.3)
 
-    plt.tight_layout()
-    plt.savefig(os.path.join(save_dir, 'dists.png'))
+    plt.savefig(os.path.join(save_dir, 'dists.png'), dpi=300, bbox_inches='tight')
     plt.close()
 
 def save_inference_time_plot(inference_times, save_dir):
     avg_inference_time_unet = np.mean(inference_times['unet'])
     avg_inference_time_diffusion = np.mean(inference_times['diffusion'])
 
-    labels = ['UNet', 'Diffusion']
+    labels = [r'UNet', r'Diffusion']
     times = [avg_inference_time_unet, avg_inference_time_diffusion]
 
-    plt.figure(figsize=(10, 6))
-    plt.bar(labels, times, color=['purple', 'green'])
-    plt.ylabel('Average Inference Time (s)')
-    plt.title('Average Inference Time Comparison')
-    plt.savefig(os.path.join(save_dir, 'inference_time_comparison.png'))
+    plt.figure(figsize=(10, 6), constrained_layout=True)
+    plt.bar(labels, times, color=[pale_purple, pale_green])
+    plt.ylabel(r'Average Inference Time (s)', fontsize=14, fontweight='bold')
+    plt.title(r'Average Inference Time Comparison', fontsize=16, fontweight='bold')
+    plt.savefig(os.path.join(save_dir, 'inference_time_comparison.png'), dpi=300, bbox_inches='tight')
     plt.close()
 
 def generate_comparison_plot(metrics, epochs, save_dir, use_bm3d=False):
@@ -395,7 +395,6 @@ def generate_comparison_plot(metrics, epochs, save_dir, use_bm3d=False):
     lpips_diffusion = np.array(metrics['lpips_diffusion'])
     lpips_unet = np.array(metrics['lpips_unet'])
     
-    # Check if BM3D data exists and if use_bm3d is True
     use_bm3d = use_bm3d and 'psnr_bm3d' in metrics and 'lpips_bm3d' in metrics
     if use_bm3d:
         psnr_bm3d = np.array(metrics['psnr_bm3d'])
@@ -410,42 +409,42 @@ def generate_comparison_plot(metrics, epochs, save_dir, use_bm3d=False):
         avg_psnr_bm3d = [np.mean(psnr_bm3d[noise_levels == nl]) for nl in unique_noise_levels]
         avg_lpips_bm3d = [np.mean(lpips_bm3d[noise_levels == nl]) for nl in unique_noise_levels]
 
-    fig, ax = plt.subplots(figsize=(12, 8))
+    fig, ax = plt.subplots(figsize=(12, 8), constrained_layout=True)
     
     # Create a colorblind-friendly colormap
     colors = ['#FFEDA0', '#FEB24C', '#F03B20']  # Light yellow to orange to dark red
     n_bins = len(unique_noise_levels)
     cmap = LinearSegmentedColormap.from_list("custom", colors, N=n_bins)
     
+
     # Plot with color gradient
     scatter_diffusion = ax.scatter(avg_lpips_diffusion, avg_psnr_diffusion,
                                    c=unique_noise_levels, cmap=cmap,
-                                   label='Diffusion Model', marker='*', s=200, edgecolors='black')
+                                   label=r'Diffusion Model', marker='*', s=200, edgecolors='black')
     
     scatter_unet = ax.scatter(avg_lpips_unet, avg_psnr_unet,
                               c=unique_noise_levels, cmap=cmap,
-                              label='UNet Model', marker='o', s=200, edgecolors='black')
+                              label=r'UNet Model', marker='o', s=200, edgecolors='black')
     
     if use_bm3d:
         scatter_bm3d = ax.scatter(avg_lpips_bm3d, avg_psnr_bm3d,
                                   c=unique_noise_levels, cmap=cmap,
-                                  label='BM3D', marker='^', s=200, edgecolors='black')
+                                  label=r'BM3D', marker='^', s=200, edgecolors='black')
     
-    # Add colorbar
     cbar = plt.colorbar(scatter_diffusion)
-    cbar.set_label('Noise Level', rotation=270, labelpad=15)
+    cbar.set_label(r'Noise Level ($\sigma$)', rotation=270, labelpad=15)
     
-    ax.set_xlabel('LPIPS (lower is better)', fontsize=12)
-    ax.set_ylabel('PSNR (higher is better)', fontsize=12)
-    ax.set_title('Model Comparison across Noise Levels', fontsize=14)
-    ax.legend(fontsize=10)
+    ax.set_xlabel(r'LPIPS (lower is better)', fontsize=14, fontweight='bold')
+    ax.set_ylabel(r'PSNR (higher is better)', fontsize=14, fontweight='bold')
+    ax.set_title(r'Model Comparison Across Noise Levels', fontsize=16, fontweight='bold')
+    ax.legend(fontsize=12)
     ax.grid(True, linestyle='--', alpha=0.7)
     
     # Add arrows to indicate better performance directions
     ax.annotate('', xy=(0.05, 0.95), xytext=(0.15, 0.95),
                 xycoords='axes fraction', textcoords='axes fraction',
                 arrowprops=dict(arrowstyle='->', color='gray'))
-    ax.text(0.1, 0.97, 'Better LPIPS', ha='center', va='center',
+    ax.text(0.1, 0.97, r'Better LPIPS', ha='center', va='center',
             transform=ax.transAxes, fontsize=10, color='gray')
 
     ax.annotate('', xy=(0.95, 0.85), xytext=(0.95, 0.95),
@@ -454,6 +453,5 @@ def generate_comparison_plot(metrics, epochs, save_dir, use_bm3d=False):
     ax.text(0.97, 0.9, 'Better PSNR', ha='center', va='center',
             transform=ax.transAxes, fontsize=10, color='gray', rotation=90)
 
-    plt.tight_layout()
     plt.savefig(os.path.join(save_dir, 'comparison_plot.png'), dpi=300, bbox_inches='tight')
     plt.close(fig)
