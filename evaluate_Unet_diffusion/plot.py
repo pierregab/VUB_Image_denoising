@@ -49,7 +49,7 @@ def save_example_images(example_images, save_dir):
             ax.axis('off')
             
     
-    plt.suptitle("Image Denoising Comparison Across Noise Levels", fontsize=16, fontweight='bold', y=1.02)
+    plt.suptitle("Image Denoising Comparison Across Noise Levels", fontsize=16, fontweight='bold', y=1)
     
     plt.tight_layout()
     plt.savefig(os.path.join(save_dir, 'example_images_comparison.png'), dpi=300, bbox_inches='tight')
@@ -162,7 +162,7 @@ def save_frequency_domain_analysis(metrics, last_epoch, save_dir, high_freq_thre
         sem_mae_diff_unet.append(np.std(mae_diff_unet) / np.sqrt(len(mae_diff_unet)))
         sem_mae_diff_diffusion.append(np.std(mae_diff_diffusion) / np.sqrt(len(mae_diff_diffusion)))
 
-    fig, ax = plt.subplots(figsize=(10, 8))
+    fig, ax = plt.subplots(figsize=(12, 8))
 
     # Plot with error bands
     ax.plot(unique_noise_levels, avg_mae_diff_unet, '-', label='UNet Model', color='#7FDBFF', linewidth=2.5, marker='o', markersize=8)
