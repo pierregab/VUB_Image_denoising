@@ -4,57 +4,55 @@ import matplotlib.pyplot as plt
 from scipy.signal import welch
 from matplotlib.colors import LinearSegmentedColormap
 from matplotlib.ticker import ScalarFormatter
+from mpl_toolkits.axes_grid1 import ImageGrid
 
 def save_example_images(example_images, save_dir):
-    noise_levels_to_plot = [15, 30, 50]
+    noise_levels_to_plot = [10, 30, 50]
     filtered_images = {k: v for k, v in example_images.items() if k in noise_levels_to_plot}
-
     num_levels = len(filtered_images)
+    
     if num_levels == 0:
         print("No example images to plot.")
         return
-
-    fig, axs = plt.subplots(num_levels, 4, figsize=(20, 5 * num_levels))
-
+    
+    fig = plt.figure(figsize=(16, 5 * num_levels))
+    grid = ImageGrid(fig, 111,
+                     nrows_ncols=(num_levels, 4),
+                     axes_pad=0.6,
+                     share_all=True,
+                     )
+    
+    # Function to process and prepare image for plotting
+    def process_image(img):
+        img_np = np.array(img)
+        if img_np.ndim == 3 and img_np.shape[0] == 3:
+            img_np = np.transpose(img_np, (1, 2, 0))
+        if img_np.dtype != np.uint8:
+            img_np = np.clip(img_np * 255, 0, 255).astype(np.uint8)
+        return img_np
+    
+    vmin, vmax = 0, 255
     for i, (sigma, images) in enumerate(filtered_images.items()):
         gt_image, degraded_image, predicted_unet_image, predicted_diffusion_image = images
-
-        # Function to process and prepare image for plotting
-        def process_image(img):
-            img_np = np.array(img)
-            if img_np.ndim == 3 and img_np.shape[0] == 3:
-                img_np = np.transpose(img_np, (1, 2, 0))
-            if img_np.dtype != np.uint8:
-                img_np = np.clip(img_np * 255, 0, 255).astype(np.uint8)
-            return img_np
-
-        gt_image_np = process_image(gt_image)
-        degraded_np = process_image(degraded_image)
-        predicted_unet_np = process_image(predicted_unet_image)
-        predicted_diffusion_np = process_image(predicted_diffusion_image)
-
-        # Handle case where axs is not 2D (when num_levels = 1)
-        if num_levels == 1:
-            axs = [axs]
-
-        axs[i][0].imshow(gt_image_np, cmap='gray' if gt_image_np.ndim == 2 else None)
-        axs[i][0].set_title(f'Ground Truth (Sigma: {sigma})')
-        axs[i][0].axis('off')
-
-        axs[i][1].imshow(degraded_np, cmap='gray' if degraded_np.ndim == 2 else None)
-        axs[i][1].set_title('Noisy')
-        axs[i][1].axis('off')
-
-        axs[i][2].imshow(predicted_unet_np, cmap='gray' if predicted_unet_np.ndim == 2 else None)
-        axs[i][2].set_title('Denoised (UNet)')
-        axs[i][2].axis('off')
-
-        axs[i][3].imshow(predicted_diffusion_np, cmap='gray' if predicted_diffusion_np.ndim == 2 else None)
-        axs[i][3].set_title('Denoised (Diffusion)')
-        axs[i][3].axis('off')
-
+        
+        images_to_plot = [
+            ("Ground Truth", process_image(gt_image)),
+            ("Noisy", process_image(degraded_image)),
+            ("Denoised (UNet)", process_image(predicted_unet_image)),
+            ("Denoised (Diffusion)", process_image(predicted_diffusion_image))
+        ]
+        
+        for j, (title, img) in enumerate(images_to_plot):
+            ax = grid[i*4 + j]
+            im = ax.imshow(img, cmap='gray' if img.ndim == 2 else None, vmin=vmin, vmax=vmax)
+            ax.set_title(f"{title}\n(σ = {sigma})", fontsize=12, fontweight='bold')
+            ax.axis('off')
+            
+    
+    plt.suptitle("Image Denoising Comparison Across Noise Levels", fontsize=16, fontweight='bold', y=1.02)
+    
     plt.tight_layout()
-    plt.savefig(os.path.join(save_dir, 'example_images.png'))
+    plt.savefig(os.path.join(save_dir, 'example_images_comparison.png'), dpi=300, bbox_inches='tight')
     plt.close()
 
 def save_error_map(gt_image, predicted_image, save_dir):
@@ -130,6 +128,8 @@ def save_frequency_domain_analysis(metrics, last_epoch, save_dir, high_freq_thre
     unique_noise_levels = sorted(np.unique(noise_levels))
     avg_mae_diff_unet = []
     avg_mae_diff_diffusion = []
+    sem_mae_diff_unet = []
+    sem_mae_diff_diffusion = []
 
     for nl in unique_noise_levels:
         idx = (noise_levels == nl) & (np.array(metrics['epoch']) == last_epoch)
@@ -150,7 +150,6 @@ def save_frequency_domain_analysis(metrics, last_epoch, save_dir, high_freq_thre
             _, Pxx_diffusion = welch(predicted_diffusion_image.flatten(), nperseg=256)
 
             high_freq_idx = f >= high_freq_threshold * np.max(f)
-
             Pxx_gt_high = Pxx_gt[high_freq_idx]
             Pxx_unet_high = Pxx_unet[high_freq_idx]
             Pxx_diffusion_high = Pxx_diffusion[high_freq_idx]
@@ -160,17 +159,47 @@ def save_frequency_domain_analysis(metrics, last_epoch, save_dir, high_freq_thre
 
         avg_mae_diff_unet.append(np.mean(mae_diff_unet))
         avg_mae_diff_diffusion.append(np.mean(mae_diff_diffusion))
+        sem_mae_diff_unet.append(np.std(mae_diff_unet) / np.sqrt(len(mae_diff_unet)))
+        sem_mae_diff_diffusion.append(np.std(mae_diff_diffusion) / np.sqrt(len(mae_diff_diffusion)))
 
-    plt.figure(figsize=(10, 6))
-    plt.plot(unique_noise_levels, avg_mae_diff_unet, 'o-', label='UNet Model', color='purple')
-    plt.plot(unique_noise_levels, avg_mae_diff_diffusion, 'o-', label=f'Diffusion Model (Epoch {last_epoch})', color='green')
-    plt.xlabel('Noise Standard Deviation')
-    plt.ylabel('MAE in High-Frequency Domain')
-    plt.title('MAE in High-Frequency Domain Analysis')
-    plt.legend()
-    plt.grid()
+    fig, ax = plt.subplots(figsize=(10, 8))
+
+    # Plot with error bands
+    ax.plot(unique_noise_levels, avg_mae_diff_unet, '-', label='UNet Model', color='#7FDBFF', linewidth=2.5, marker='o', markersize=8)
+    ax.fill_between(unique_noise_levels, 
+                    np.array(avg_mae_diff_unet) - np.array(sem_mae_diff_unet),
+                    np.array(avg_mae_diff_unet) + np.array(sem_mae_diff_unet),
+                    color='#7FDBFF', alpha=0.2)
+
+    ax.plot(unique_noise_levels, avg_mae_diff_diffusion, '-', label='Diffusion Model', color='#2ECC40', linewidth=2.5, marker='s', markersize=8)
+    ax.fill_between(unique_noise_levels, 
+                    np.array(avg_mae_diff_diffusion) - np.array(sem_mae_diff_diffusion),
+                    np.array(avg_mae_diff_diffusion) + np.array(sem_mae_diff_diffusion),
+                    color='#2ECC40', alpha=0.2)
+
+    ax.set_xlabel('Noise Standard Deviation (σ)', fontsize=14, fontweight='bold')
+    ax.set_ylabel('MAE in High-Frequency Domain', fontsize=14, fontweight='bold')
+    ax.set_title('High-Frequency Domain Analysis of Denoising Models', fontsize=16, fontweight='bold')
+
+    ax.legend(fontsize=12, loc='upper right', frameon=True, facecolor='white', edgecolor='none', shadow=True)
+    ax.grid(True, which="both", ls="--", alpha=0.3, color='gray')
+
+    # Format ticks
+    ax.xaxis.set_major_formatter(ScalarFormatter())
+    ax.yaxis.set_major_formatter(ScalarFormatter())
+    ax.tick_params(axis='both', which='major', labelsize=12)
+
+    # Set y-axis to log scale
+    ax.set_yscale('log')
+
+    # Add textbox with parameters
+    textstr = f'High Freq. Threshold: {high_freq_threshold}\nEpoch: {last_epoch}'
+    props = dict(boxstyle='round,pad=0.5', facecolor='white', edgecolor='gray', alpha=0.8)
+    ax.text(0.05, 0.95, textstr, transform=ax.transAxes, fontsize=11,
+            verticalalignment='top', bbox=props)
+
     plt.tight_layout()
-    plt.savefig(os.path.join(save_dir, 'high_frequency_domain_analysis.png'))
+    plt.savefig(os.path.join(save_dir, 'high_frequency_domain_analysis.png'), dpi=300, bbox_inches='tight')
     plt.close()
 
 def save_frequency_domain_analysis_multiple_epochs(metrics, epochs, save_dir, high_freq_threshold=0.5):
@@ -382,8 +411,6 @@ def generate_comparison_plot(metrics, epochs, save_dir, use_bm3d=False):
         avg_lpips_bm3d = [np.mean(lpips_bm3d[noise_levels == nl]) for nl in unique_noise_levels]
 
     fig, ax = plt.subplots(figsize=(12, 8))
-    # zoom out the plot by 20%
-    ax.set_xlim(ax.get_xlim()[0] - 0.2, ax.get_xlim()[1] + 0.2)
     
     # Create a colorblind-friendly colormap
     colors = ['#FFEDA0', '#FEB24C', '#F03B20']  # Light yellow to orange to dark red
