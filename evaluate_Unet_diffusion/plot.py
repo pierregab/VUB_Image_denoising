@@ -56,10 +56,10 @@ def save_example_images(example_images, save_dir):
         for j, (title, img) in enumerate(images_to_plot):
             ax = grid[i*4 + j]
             im = ax.imshow(img, cmap='gray' if img.ndim == 2 else None, vmin=vmin, vmax=vmax)
-            ax.set_title(rf"{title}\\ ($\sigma$ = {sigma})", fontsize=12, fontweight='bold')
+            ax.set_title(rf"{title} ($\sigma = {sigma}$)", fontsize=12, fontweight='bold')
             ax.axis('off')
-            
-    plt.suptitle(r"Image Denoising Comparison Across Noise Levels", fontsize=16, fontweight='bold', y=1)
+         
+    plt.suptitle(r"Image Denoising Comparison Across Noise Levels", fontsize=16, fontweight='bold', y=0.85)
     
     plt.savefig(os.path.join(save_dir, 'example_images_comparison.png'), dpi=300, bbox_inches='tight')
     plt.close()
@@ -305,7 +305,7 @@ def plot_psd_comparison(metrics, last_epoch, save_dir, high_freq_threshold=0.5):
         se_unet = np.std(psd_unet_all, axis=0) / np.sqrt(len(psd_unet_all))
         se_diffusion = np.std(psd_diffusion_all, axis=0) / np.sqrt(len(psd_diffusion_all))
 
-        fig, ax = plt.subplots(figsize=(14, 8), constrained_layout=True)
+        fig, ax = plt.subplots(figsize=(12, 8), constrained_layout=True)
         
         # Plot with error bands
         ax.plot(f_gt[high_freq_idx], avg_psd_gt, label='Ground Truth', color='#000000', linewidth=2.5, zorder=5)
@@ -324,7 +324,7 @@ def plot_psd_comparison(metrics, last_epoch, save_dir, high_freq_threshold=0.5):
         ax.set_ylabel(r'Power Spectral Density (dB/Hz)', fontsize=14, fontweight='bold')
         ax.set_yscale('log')
         ax.set_xscale('log')
-        ax.set_title(rf'Power Spectral Density Comparison\\Noise Level $\sigma$ = {nl:.2f}', fontsize=16, fontweight='bold')
+        ax.set_title(rf'Power Spectral Density Comparison, Noise Level $\sigma$ = {nl:.2f}', fontsize=16, fontweight='bold')
         ax.legend(fontsize=12, loc='lower left', frameon=True, facecolor='white', edgecolor='none')
         ax.grid(True, which="both", ls="--", alpha=0.3, color='gray')
         
@@ -455,3 +455,104 @@ def generate_comparison_plot(metrics, epochs, save_dir, use_bm3d=False):
 
     plt.savefig(os.path.join(save_dir, 'comparison_plot.png'), dpi=300, bbox_inches='tight')
     plt.close(fig)
+
+def save_metrics(metrics, last_epoch, use_bm3d, save_dir):
+    epochs = sorted(set(metrics['epoch']))
+    noise_levels = np.array(metrics['noise_level'])
+    psnr_degraded = np.array(metrics['psnr_degraded'])
+    psnr_diffusion = np.array(metrics['psnr_diffusion'])
+    psnr_unet = np.array(metrics['psnr_unet'])
+    psnr_bm3d = np.array(metrics['psnr_bm3d'])
+    ssim_degraded = np.array(metrics['ssim_degraded'])
+    ssim_diffusion = np.array(metrics['ssim_diffusion'])
+    ssim_unet = np.array(metrics['ssim_unet'])
+    ssim_bm3d = np.array(metrics['ssim_bm3d'])
+    lpips_degraded = np.array(metrics['lpips_degraded'])
+    lpips_diffusion = np.array(metrics['lpips_diffusion'])
+    lpips_unet = np.array(metrics['lpips_unet'])
+    lpips_bm3d = np.array(metrics['lpips_bm3d'])
+
+    unique_noise_levels = sorted(np.unique(noise_levels))
+
+    avg_psnr_degraded = [np.mean(psnr_degraded[noise_levels == nl]) for nl in unique_noise_levels]
+    avg_psnr_diffusion_last = [np.mean(psnr_diffusion[(noise_levels == nl) & (np.array(metrics['epoch']) == last_epoch)]) for nl in unique_noise_levels]
+    avg_psnr_unet = [np.mean(psnr_unet[noise_levels == nl]) for nl in unique_noise_levels]
+    avg_psnr_bm3d = [np.mean(psnr_bm3d[noise_levels == nl]) for nl in unique_noise_levels] if use_bm3d else []
+    avg_ssim_degraded = [np.mean(ssim_degraded[noise_levels == nl]) for nl in unique_noise_levels]
+    avg_ssim_diffusion_last = [np.mean(ssim_diffusion[(noise_levels == nl) & (np.array(metrics['epoch']) == last_epoch)]) for nl in unique_noise_levels]
+    avg_ssim_unet = [np.mean(ssim_unet[noise_levels == nl]) for nl in unique_noise_levels]
+    avg_ssim_bm3d = [np.mean(ssim_bm3d[noise_levels == nl]) for nl in unique_noise_levels] if use_bm3d else []
+    avg_lpips_degraded = [np.mean(lpips_degraded[noise_levels == nl]) for nl in unique_noise_levels]
+    avg_lpips_diffusion_last = [np.mean(lpips_diffusion[(noise_levels == nl) & (np.array(metrics['epoch']) == last_epoch)]) for nl in unique_noise_levels]
+    avg_lpips_unet = [np.mean(lpips_unet[noise_levels == nl]) for nl in unique_noise_levels]
+    avg_lpips_bm3d = [np.mean(lpips_bm3d[noise_levels == nl]) for nl in unique_noise_levels] if use_bm3d else []
+
+    fig, axs = plt.subplots(3, 2, figsize=(20, 18))
+
+    axs[0, 0].plot(unique_noise_levels, avg_psnr_degraded, 'o-', label='Degraded', color='red')
+    axs[0, 0].plot(unique_noise_levels, avg_psnr_unet, 'o-', label='UNet Model', color='purple')
+    axs[0, 0].plot(unique_noise_levels, avg_psnr_diffusion_last, 'o-', label=f'Diffusion Model (Epoch {last_epoch})', color='green')
+    if use_bm3d:
+        axs[0, 0].plot(unique_noise_levels, avg_psnr_bm3d, 'o-', label='BM3D', color='blue')
+    axs[0, 0].set_xlabel('Noise Standard Deviation')
+    axs[0, 0].set_ylabel('PSNR')
+    axs[0, 0].set_title('PSNR value variation curve')
+    axs[0, 0].legend()
+    axs[0, 0].grid()
+
+    axs[1, 0].plot(unique_noise_levels, avg_ssim_degraded, 'o-', label='Degraded', color='red')
+    axs[1, 0].plot(unique_noise_levels, avg_ssim_unet, 'o-', label='UNet Model', color='purple')
+    axs[1, 0].plot(unique_noise_levels, avg_ssim_diffusion_last, 'o-', label=f'Diffusion Model (Epoch {last_epoch})', color='green')
+    if use_bm3d:
+        axs[1, 0].plot(unique_noise_levels, avg_ssim_bm3d, 'o-', label='BM3D', color='blue')
+    axs[1, 0].set_xlabel('Noise Standard Deviation')
+    axs[1, 0].set_ylabel('SSIM')
+    axs[1, 0].set_title('SSIM value variation curve')
+    axs[1, 0].legend()
+    axs[1, 0].grid()
+
+    axs[2, 0].plot(unique_noise_levels, avg_lpips_degraded, 'o-', label='Degraded', color='red')
+    axs[2, 0].plot(unique_noise_levels, avg_lpips_unet, 'o-', label='UNet Model', color='purple')
+    axs[2, 0].plot(unique_noise_levels, avg_lpips_diffusion_last, 'o-', label=f'Diffusion Model (Epoch {last_epoch})', color='green')
+    if use_bm3d:
+        axs[2, 0].plot(unique_noise_levels, avg_lpips_bm3d, 'o-', label='BM3D', color='blue')
+    axs[2, 0].set_xlabel('Noise Standard Deviation')
+    axs[2, 0].set_ylabel('LPIPS')
+    axs[2, 0].set_title('LPIPS value variation curve')
+    axs[2, 0].legend()
+    axs[2, 0].grid()
+
+    colors = ['blue', 'orange', 'cyan', 'magenta', 'black', 'yellow', 'green', 'red']
+    for idx, epoch in enumerate(epochs):
+        epoch_indices = [i for i, e in enumerate(metrics['epoch']) if e == epoch]
+        unique_noise_levels = sorted(np.unique(noise_levels[epoch_indices]))
+
+        avg_psnr_diffusion = [np.mean(psnr_diffusion[epoch_indices][noise_levels[epoch_indices] == nl]) for nl in unique_noise_levels]
+        avg_ssim_diffusion = [np.mean(ssim_diffusion[epoch_indices][noise_levels[epoch_indices] == nl]) for nl in unique_noise_levels]
+        avg_lpips_diffusion = [np.mean(lpips_diffusion[epoch_indices][noise_levels[epoch_indices] == nl]) for nl in unique_noise_levels]
+
+        axs[0, 1].plot(unique_noise_levels, avg_psnr_diffusion, 'o-', label=f'Diffusion Model (Epoch {epoch})', color=colors[idx % len(colors)])
+        axs[1, 1].plot(unique_noise_levels, avg_ssim_diffusion, 'o-', label=f'Diffusion Model (Epoch {epoch})', color=colors[idx % len(colors)])
+        axs[2, 1].plot(unique_noise_levels, avg_lpips_diffusion, 'o-', label=f'Diffusion Model (Epoch {epoch})', color=colors[idx % len(colors)])
+
+    axs[0, 1].set_xlabel('Noise Standard Deviation')
+    axs[0, 1].set_ylabel('PSNR')
+    axs[0, 1].set_title('PSNR value variation curve (Diffusion Model)')
+    axs[0, 1].legend()
+    axs[0, 1].grid()
+
+    axs[1, 1].set_xlabel('Noise Standard Deviation')
+    axs[1, 1].set_ylabel('SSIM')
+    axs[1, 1].set_title('SSIM value variation curve (Diffusion Model)')
+    axs[1, 1].legend()
+    axs[1, 1].grid()
+
+    axs[2, 1].set_xlabel('Noise Standard Deviation')
+    axs[2, 1].set_ylabel('LPIPS')
+    axs[2, 1].set_title('LPIPS value variation curve (Diffusion Model)')
+    axs[2, 1].legend()
+    axs[2, 1].grid()
+
+    plt.tight_layout()
+    plt.savefig(os.path.join(save_dir, 'metrics.png'))
+    plt.close()

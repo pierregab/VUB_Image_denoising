@@ -9,7 +9,7 @@ from tqdm import tqdm
 import lpips
 from DISTS_pytorch import DISTS
 import time
-from plot import save_dists, save_inference_time_plot, generate_comparison_plot, save_example_images, save_heatmaps, save_histograms_of_differences, save_frequency_domain_analysis, save_frequency_domain_analysis_multiple_epochs, plot_psd_comparison
+from plot import save_dists, save_inference_time_plot, generate_comparison_plot, save_example_images, save_heatmaps, save_histograms_of_differences, save_frequency_domain_analysis, save_frequency_domain_analysis_multiple_epochs, plot_psd_comparison, save_metrics
 
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 sys.path.append(project_root)
@@ -305,108 +305,6 @@ def evaluate_model_and_plot(epochs, diffusion_model_paths, unet_model_path, val_
 
     # Generate the comparison plot
     generate_comparison_plot(metrics, epochs, save_dir)
-
-
-def save_metrics(metrics, last_epoch, use_bm3d, save_dir):
-    epochs = sorted(set(metrics['epoch']))
-    noise_levels = np.array(metrics['noise_level'])
-    psnr_degraded = np.array(metrics['psnr_degraded'])
-    psnr_diffusion = np.array(metrics['psnr_diffusion'])
-    psnr_unet = np.array(metrics['psnr_unet'])
-    psnr_bm3d = np.array(metrics['psnr_bm3d'])
-    ssim_degraded = np.array(metrics['ssim_degraded'])
-    ssim_diffusion = np.array(metrics['ssim_diffusion'])
-    ssim_unet = np.array(metrics['ssim_unet'])
-    ssim_bm3d = np.array(metrics['ssim_bm3d'])
-    lpips_degraded = np.array(metrics['lpips_degraded'])
-    lpips_diffusion = np.array(metrics['lpips_diffusion'])
-    lpips_unet = np.array(metrics['lpips_unet'])
-    lpips_bm3d = np.array(metrics['lpips_bm3d'])
-
-    unique_noise_levels = sorted(np.unique(noise_levels))
-
-    avg_psnr_degraded = [np.mean(psnr_degraded[noise_levels == nl]) for nl in unique_noise_levels]
-    avg_psnr_diffusion_last = [np.mean(psnr_diffusion[(noise_levels == nl) & (np.array(metrics['epoch']) == last_epoch)]) for nl in unique_noise_levels]
-    avg_psnr_unet = [np.mean(psnr_unet[noise_levels == nl]) for nl in unique_noise_levels]
-    avg_psnr_bm3d = [np.mean(psnr_bm3d[noise_levels == nl]) for nl in unique_noise_levels] if use_bm3d else []
-    avg_ssim_degraded = [np.mean(ssim_degraded[noise_levels == nl]) for nl in unique_noise_levels]
-    avg_ssim_diffusion_last = [np.mean(ssim_diffusion[(noise_levels == nl) & (np.array(metrics['epoch']) == last_epoch)]) for nl in unique_noise_levels]
-    avg_ssim_unet = [np.mean(ssim_unet[noise_levels == nl]) for nl in unique_noise_levels]
-    avg_ssim_bm3d = [np.mean(ssim_bm3d[noise_levels == nl]) for nl in unique_noise_levels] if use_bm3d else []
-    avg_lpips_degraded = [np.mean(lpips_degraded[noise_levels == nl]) for nl in unique_noise_levels]
-    avg_lpips_diffusion_last = [np.mean(lpips_diffusion[(noise_levels == nl) & (np.array(metrics['epoch']) == last_epoch)]) for nl in unique_noise_levels]
-    avg_lpips_unet = [np.mean(lpips_unet[noise_levels == nl]) for nl in unique_noise_levels]
-    avg_lpips_bm3d = [np.mean(lpips_bm3d[noise_levels == nl]) for nl in unique_noise_levels] if use_bm3d else []
-
-    fig, axs = plt.subplots(3, 2, figsize=(20, 18))
-
-    axs[0, 0].plot(unique_noise_levels, avg_psnr_degraded, 'o-', label='Degraded', color='red')
-    axs[0, 0].plot(unique_noise_levels, avg_psnr_unet, 'o-', label='UNet Model', color='purple')
-    axs[0, 0].plot(unique_noise_levels, avg_psnr_diffusion_last, 'o-', label=f'Diffusion Model (Epoch {last_epoch})', color='green')
-    if use_bm3d:
-        axs[0, 0].plot(unique_noise_levels, avg_psnr_bm3d, 'o-', label='BM3D', color='blue')
-    axs[0, 0].set_xlabel('Noise Standard Deviation')
-    axs[0, 0].set_ylabel('PSNR')
-    axs[0, 0].set_title('PSNR value variation curve')
-    axs[0, 0].legend()
-    axs[0, 0].grid()
-
-    axs[1, 0].plot(unique_noise_levels, avg_ssim_degraded, 'o-', label='Degraded', color='red')
-    axs[1, 0].plot(unique_noise_levels, avg_ssim_unet, 'o-', label='UNet Model', color='purple')
-    axs[1, 0].plot(unique_noise_levels, avg_ssim_diffusion_last, 'o-', label=f'Diffusion Model (Epoch {last_epoch})', color='green')
-    if use_bm3d:
-        axs[1, 0].plot(unique_noise_levels, avg_ssim_bm3d, 'o-', label='BM3D', color='blue')
-    axs[1, 0].set_xlabel('Noise Standard Deviation')
-    axs[1, 0].set_ylabel('SSIM')
-    axs[1, 0].set_title('SSIM value variation curve')
-    axs[1, 0].legend()
-    axs[1, 0].grid()
-
-    axs[2, 0].plot(unique_noise_levels, avg_lpips_degraded, 'o-', label='Degraded', color='red')
-    axs[2, 0].plot(unique_noise_levels, avg_lpips_unet, 'o-', label='UNet Model', color='purple')
-    axs[2, 0].plot(unique_noise_levels, avg_lpips_diffusion_last, 'o-', label=f'Diffusion Model (Epoch {last_epoch})', color='green')
-    if use_bm3d:
-        axs[2, 0].plot(unique_noise_levels, avg_lpips_bm3d, 'o-', label='BM3D', color='blue')
-    axs[2, 0].set_xlabel('Noise Standard Deviation')
-    axs[2, 0].set_ylabel('LPIPS')
-    axs[2, 0].set_title('LPIPS value variation curve')
-    axs[2, 0].legend()
-    axs[2, 0].grid()
-
-    colors = ['blue', 'orange', 'cyan', 'magenta', 'black', 'yellow', 'green', 'red']
-    for idx, epoch in enumerate(epochs):
-        epoch_indices = [i for i, e in enumerate(metrics['epoch']) if e == epoch]
-        unique_noise_levels = sorted(np.unique(noise_levels[epoch_indices]))
-
-        avg_psnr_diffusion = [np.mean(psnr_diffusion[epoch_indices][noise_levels[epoch_indices] == nl]) for nl in unique_noise_levels]
-        avg_ssim_diffusion = [np.mean(ssim_diffusion[epoch_indices][noise_levels[epoch_indices] == nl]) for nl in unique_noise_levels]
-        avg_lpips_diffusion = [np.mean(lpips_diffusion[epoch_indices][noise_levels[epoch_indices] == nl]) for nl in unique_noise_levels]
-
-        axs[0, 1].plot(unique_noise_levels, avg_psnr_diffusion, 'o-', label=f'Diffusion Model (Epoch {epoch})', color=colors[idx % len(colors)])
-        axs[1, 1].plot(unique_noise_levels, avg_ssim_diffusion, 'o-', label=f'Diffusion Model (Epoch {epoch})', color=colors[idx % len(colors)])
-        axs[2, 1].plot(unique_noise_levels, avg_lpips_diffusion, 'o-', label=f'Diffusion Model (Epoch {epoch})', color=colors[idx % len(colors)])
-
-    axs[0, 1].set_xlabel('Noise Standard Deviation')
-    axs[0, 1].set_ylabel('PSNR')
-    axs[0, 1].set_title('PSNR value variation curve (Diffusion Model)')
-    axs[0, 1].legend()
-    axs[0, 1].grid()
-
-    axs[1, 1].set_xlabel('Noise Standard Deviation')
-    axs[1, 1].set_ylabel('SSIM')
-    axs[1, 1].set_title('SSIM value variation curve (Diffusion Model)')
-    axs[1, 1].legend()
-    axs[1, 1].grid()
-
-    axs[2, 1].set_xlabel('Noise Standard Deviation')
-    axs[2, 1].set_ylabel('LPIPS')
-    axs[2, 1].set_title('LPIPS value variation curve (Diffusion Model)')
-    axs[2, 1].legend()
-    axs[2, 1].grid()
-
-    plt.tight_layout()
-    plt.savefig(os.path.join(save_dir, 'metrics.png'))
-    plt.close()
 
 if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() else "mps")
