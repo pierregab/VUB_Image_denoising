@@ -300,7 +300,7 @@ def evaluate_model_and_plot(epochs, diffusion_model_paths, unet_model_path, val_
     # Call the PSD comparison plotting
     plot_psd_comparison(metrics, epochs[-1], save_dir)
 
-    # Save the inference time comparison plot
+    # Save the inference time comparison plot 
     save_inference_time_plot(inference_times, save_dir)
 
     # Generate the comparison plot

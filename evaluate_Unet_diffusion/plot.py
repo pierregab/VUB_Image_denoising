@@ -387,66 +387,82 @@ def save_inference_time_plot(inference_times, save_dir):
     plt.close()
 
 def generate_comparison_plot(metrics, epochs, save_dir, use_bm3d=False):
+    import numpy as np
+    import matplotlib.pyplot as plt
+    from matplotlib.colors import LinearSegmentedColormap
+    import os
+
     noise_levels = np.array(metrics['noise_level'])
     unique_noise_levels = sorted(np.unique(noise_levels))
-    
     psnr_diffusion = np.array(metrics['psnr_diffusion'])
     psnr_unet = np.array(metrics['psnr_unet'])
     lpips_diffusion = np.array(metrics['lpips_diffusion'])
     lpips_unet = np.array(metrics['lpips_unet'])
-    
     use_bm3d = use_bm3d and 'psnr_bm3d' in metrics and 'lpips_bm3d' in metrics
     if use_bm3d:
         psnr_bm3d = np.array(metrics['psnr_bm3d'])
         lpips_bm3d = np.array(metrics['lpips_bm3d'])
 
-    avg_psnr_diffusion = [np.mean(psnr_diffusion[noise_levels == nl]) for nl in unique_noise_levels]
-    avg_psnr_unet = [np.mean(psnr_unet[noise_levels == nl]) for nl in unique_noise_levels]
-    avg_lpips_diffusion = [np.mean(lpips_diffusion[noise_levels == nl]) for nl in unique_noise_levels]
-    avg_lpips_unet = [np.mean(lpips_unet[noise_levels == nl]) for nl in unique_noise_levels]
-    
+    # Calculate means and standard errors
+    def calc_mean_and_se(data):
+        return np.mean(data), np.std(data) / np.sqrt(len(data))
+
+    avg_psnr_diffusion, se_psnr_diffusion = zip(*[calc_mean_and_se(psnr_diffusion[noise_levels == nl]) for nl in unique_noise_levels])
+    avg_psnr_unet, se_psnr_unet = zip(*[calc_mean_and_se(psnr_unet[noise_levels == nl]) for nl in unique_noise_levels])
+    avg_lpips_diffusion, se_lpips_diffusion = zip(*[calc_mean_and_se(lpips_diffusion[noise_levels == nl]) for nl in unique_noise_levels])
+    avg_lpips_unet, se_lpips_unet = zip(*[calc_mean_and_se(lpips_unet[noise_levels == nl]) for nl in unique_noise_levels])
+
     if use_bm3d:
-        avg_psnr_bm3d = [np.mean(psnr_bm3d[noise_levels == nl]) for nl in unique_noise_levels]
-        avg_lpips_bm3d = [np.mean(lpips_bm3d[noise_levels == nl]) for nl in unique_noise_levels]
+        avg_psnr_bm3d, se_psnr_bm3d = zip(*[calc_mean_and_se(psnr_bm3d[noise_levels == nl]) for nl in unique_noise_levels])
+        avg_lpips_bm3d, se_lpips_bm3d = zip(*[calc_mean_and_se(lpips_bm3d[noise_levels == nl]) for nl in unique_noise_levels])
 
     fig, ax = plt.subplots(figsize=(12, 8), constrained_layout=True)
-    
-    # Create a colorblind-friendly colormap
-    colors = ['#FFEDA0', '#FEB24C', '#F03B20']  # Light yellow to orange to dark red
-    n_bins = len(unique_noise_levels)
-    cmap = LinearSegmentedColormap.from_list("custom", colors, N=n_bins)
-    
 
-    # Plot with color gradient
-    scatter_diffusion = ax.scatter(avg_lpips_diffusion, avg_psnr_diffusion,
-                                   c=unique_noise_levels, cmap=cmap,
-                                   label=r'Diffusion Model', marker='*', s=200, edgecolors='black')
-    
-    scatter_unet = ax.scatter(avg_lpips_unet, avg_psnr_unet,
-                              c=unique_noise_levels, cmap=cmap,
-                              label=r'UNet Model', marker='o', s=200, edgecolors='black')
-    
-    if use_bm3d:
-        scatter_bm3d = ax.scatter(avg_lpips_bm3d, avg_psnr_bm3d,
-                                  c=unique_noise_levels, cmap=cmap,
-                                  label=r'BM3D', marker='^', s=200, edgecolors='black')
-    
-    cbar = plt.colorbar(scatter_diffusion)
+    # Create a more vibrant color gradient
+    colors = ['#4575B4', '#D73027']  # Blue to Red
+    cmap = LinearSegmentedColormap.from_list("custom_vibrant", colors, N=256)
+
+    # Create a ScalarMappable for the colorbar
+    norm = plt.Normalize(vmin=min(unique_noise_levels), vmax=max(unique_noise_levels))
+    sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
+    sm.set_array([])
+
+    # Plot with color gradient and error bars
+    edge_color = 'navy'  # Dark blue edge for contrast
+    for i, nl in enumerate(unique_noise_levels):
+        color = sm.to_rgba(nl)
+        
+        ax.errorbar(avg_lpips_diffusion[i], avg_psnr_diffusion[i],
+                    xerr=se_lpips_diffusion[i], yerr=se_psnr_diffusion[i],
+                    color=color, marker='*', markersize=15,
+                    linestyle='', capsize=5, label=f'Diffusion Model ({nl})' if i == 0 else "")
+
+        ax.errorbar(avg_lpips_unet[i], avg_psnr_unet[i],
+                    xerr=se_lpips_unet[i], yerr=se_psnr_unet[i],
+                    color=color, marker='o', markersize=15,
+                    linestyle='', capsize=5, label=f'UNet Model ({nl})' if i == 0 else "")
+
+        if use_bm3d:
+            ax.errorbar(avg_lpips_bm3d[i], avg_psnr_bm3d[i],
+                        xerr=se_lpips_bm3d[i], yerr=se_psnr_bm3d[i],
+                        color=color, marker='^', markersize=15, 
+                        linestyle='', capsize=5, label=f'BM3D ({nl})' if i == 0 else "")
+
+    cbar = fig.colorbar(sm, ax=ax)
     cbar.set_label(r'Noise Level ($\sigma$)', rotation=270, labelpad=15)
-    
+
     ax.set_xlabel(r'LPIPS (lower is better)', fontsize=14, fontweight='bold')
     ax.set_ylabel(r'PSNR (higher is better)', fontsize=14, fontweight='bold')
     ax.set_title(r'Model Comparison Across Noise Levels', fontsize=16, fontweight='bold')
     ax.legend(fontsize=12)
     ax.grid(True, linestyle='--', alpha=0.7)
-    
+
     # Add arrows to indicate better performance directions
     ax.annotate('', xy=(0.05, 0.95), xytext=(0.15, 0.95),
                 xycoords='axes fraction', textcoords='axes fraction',
                 arrowprops=dict(arrowstyle='->', color='gray'))
     ax.text(0.1, 0.97, r'Better LPIPS', ha='center', va='center',
             transform=ax.transAxes, fontsize=10, color='gray')
-
     ax.annotate('', xy=(0.95, 0.85), xytext=(0.95, 0.95),
                 xycoords='axes fraction', textcoords='axes fraction',
                 arrowprops=dict(arrowstyle='<-', color='gray'))
