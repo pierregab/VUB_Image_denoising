@@ -5,6 +5,7 @@ from scipy.signal import welch
 from matplotlib.colors import LinearSegmentedColormap
 from matplotlib.ticker import ScalarFormatter
 from mpl_toolkits.axes_grid1 import ImageGrid
+from scipy.spatial import ConvexHull
 
 # Use the same palette for all plots (pale colors)
 pale_red = '#FF4136'
@@ -387,11 +388,6 @@ def save_inference_time_plot(inference_times, save_dir):
     plt.close()
 
 def generate_comparison_plot(metrics, epochs, save_dir, use_bm3d=False):
-    import numpy as np
-    import matplotlib.pyplot as plt
-    from matplotlib.colors import LinearSegmentedColormap
-    import os
-
     noise_levels = np.array(metrics['noise_level'])
     unique_noise_levels = sorted(np.unique(noise_levels))
     psnr_diffusion = np.array(metrics['psnr_diffusion'])
@@ -426,6 +422,26 @@ def generate_comparison_plot(metrics, epochs, save_dir, use_bm3d=False):
     norm = plt.Normalize(vmin=min(unique_noise_levels), vmax=max(unique_noise_levels))
     sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
     sm.set_array([])
+
+    # Prepare data for convex hulls
+    hull_data = {
+        'diffusion': list(zip(avg_lpips_diffusion, avg_psnr_diffusion)),
+        'unet': list(zip(avg_lpips_unet, avg_psnr_unet))
+    }
+    if use_bm3d:
+        hull_data['bm3d'] = list(zip(avg_lpips_bm3d, avg_psnr_bm3d))
+
+    # Plot convex hulls (zones)
+    for model, points in hull_data.items():
+        if len(points) >= 3:  # Need at least 3 points for a convex hull
+            hull = ConvexHull(points)
+            for simplex in hull.simplices:
+                ax.plot([points[simplex[0]][0], points[simplex[1]][0]],
+                        [points[simplex[0]][1], points[simplex[1]][1]],
+                        color='gray', alpha=0.5, linestyle='--')
+            ax.fill([points[i][0] for i in hull.vertices],
+                    [points[i][1] for i in hull.vertices],
+                    alpha=0.1, label=f'{model.capitalize()} Zone')
 
     # Plot with color gradient and error bars
     edge_color = 'navy'  # Dark blue edge for contrast
@@ -469,7 +485,7 @@ def generate_comparison_plot(metrics, epochs, save_dir, use_bm3d=False):
     ax.text(0.97, 0.9, 'Better PSNR', ha='center', va='center',
             transform=ax.transAxes, fontsize=10, color='gray', rotation=90)
 
-    plt.savefig(os.path.join(save_dir, 'comparison_plot.png'), dpi=300, bbox_inches='tight')
+    plt.savefig(os.path.join(save_dir, 'comparison_plot_with_zones.png'), dpi=300, bbox_inches='tight')
     plt.close(fig)
 
 def save_metrics(metrics, last_epoch, use_bm3d, save_dir):
