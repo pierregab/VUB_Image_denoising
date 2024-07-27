@@ -448,20 +448,27 @@ def generate_comparison_plot(metrics, epochs, save_dir, use_bm3d=False):
     for i, nl in enumerate(unique_noise_levels):
         color = sm.to_rgba(nl)
         
-        ax.errorbar(avg_lpips_diffusion[i], avg_psnr_diffusion[i],
+        # Plot diffusion model points (now using squares)
+        diff_point = ax.errorbar(avg_lpips_diffusion[i], avg_psnr_diffusion[i],
                     xerr=se_lpips_diffusion[i], yerr=se_psnr_diffusion[i],
-                    color=color, marker='*', markersize=15,
+                    color=color, marker='s', markersize=10,
                     linestyle='', capsize=5, label=f'Diffusion Model ({nl})' if i == 0 else "")
 
-        ax.errorbar(avg_lpips_unet[i], avg_psnr_unet[i],
+        # Plot UNet model points
+        unet_point = ax.errorbar(avg_lpips_unet[i], avg_psnr_unet[i],
                     xerr=se_lpips_unet[i], yerr=se_psnr_unet[i],
-                    color=color, marker='o', markersize=15,
+                    color=color, marker='o', markersize=10,
                     linestyle='', capsize=5, label=f'UNet Model ({nl})' if i == 0 else "")
+
+        # Add arrow from UNet to Diffusion point
+        ax.annotate('', xy=(avg_lpips_diffusion[i], avg_psnr_diffusion[i]),
+                    xytext=(avg_lpips_unet[i], avg_psnr_unet[i]),
+                    arrowprops=dict(arrowstyle='->', color=color, alpha=0.7, linewidth=1.5))
 
         if use_bm3d:
             ax.errorbar(avg_lpips_bm3d[i], avg_psnr_bm3d[i],
                         xerr=se_lpips_bm3d[i], yerr=se_psnr_bm3d[i],
-                        color=color, marker='^', markersize=15, 
+                        color=color, marker='^', markersize=10, 
                         linestyle='', capsize=5, label=f'BM3D ({nl})' if i == 0 else "")
 
     cbar = fig.colorbar(sm, ax=ax)
@@ -485,7 +492,7 @@ def generate_comparison_plot(metrics, epochs, save_dir, use_bm3d=False):
     ax.text(0.97, 0.9, 'Better PSNR', ha='center', va='center',
             transform=ax.transAxes, fontsize=10, color='gray', rotation=90)
 
-    plt.savefig(os.path.join(save_dir, 'comparison_plot_with_zones.png'), dpi=300, bbox_inches='tight')
+    plt.savefig(os.path.join(save_dir, 'comparison_plot_with_zones_and_arrows.png'), dpi=300, bbox_inches='tight')
     plt.close(fig)
 
 def save_metrics(metrics, last_epoch, use_bm3d, save_dir):
