@@ -28,23 +28,33 @@ input_tensor = torch.randn(1, 3, 256, 256).to(device)
 input_noise = torch.randn(1, 3, 256, 256).to(device)
 input_scalar = torch.tensor([1.0]).to(device)
 
-# Function to measure inference memory usage
-def measure_inference_memory(model, *inputs):
-    torch.cuda.reset_peak_memory_stats(device)
-    torch.cuda.synchronize()
-    start_time = time.time()
-    with torch.no_grad():
-        model(*inputs)
-    torch.cuda.synchronize()
-    inference_time = time.time() - start_time
-    memory_usage = torch.cuda.max_memory_allocated(device)
-    return memory_usage, inference_time
+# Function to measure inference memory usage and time
+def measure_inference_metrics(model, *inputs, num_iterations=10):
+    total_memory_usage = 0
+    total_inference_time = 0
+    
+    for _ in range(num_iterations):
+        torch.cuda.reset_peak_memory_stats(device)
+        torch.cuda.synchronize()
+        start_time = time.time()
+        with torch.no_grad():
+            model(*inputs)
+        torch.cuda.synchronize()
+        inference_time = time.time() - start_time
+        memory_usage = torch.cuda.max_memory_allocated(device)
+        
+        total_memory_usage += memory_usage
+        total_inference_time += inference_time
+        
+    avg_memory_usage = total_memory_usage / num_iterations
+    avg_inference_time = total_inference_time / num_iterations
+    return avg_memory_usage, avg_inference_time
 
 # Measure memory usage for UNet model
-unet_memory_usage, unet_inference_time = measure_inference_memory(unet_model, input_tensor)
+unet_memory_usage, unet_inference_time = measure_inference_metrics(unet_model, input_tensor)
 
 # Measure memory usage for Diffusion model
-diffusion_memory_usage, diffusion_inference_time = measure_inference_memory(diffusion_model, input_tensor, input_noise, input_scalar)
+diffusion_memory_usage, diffusion_inference_time = measure_inference_metrics(diffusion_model, input_tensor, input_noise, input_scalar)
 
 # Print model summaries
 print("UNet Model Summary:")
@@ -53,8 +63,8 @@ print("\nDiffusion Model Summary:")
 print(diffusion_summary)
 
 # Print memory usage and inference time
-print(f"\nUNet Model Memory Usage: {unet_memory_usage / (1024 ** 2):.2f} MB")
-print(f"UNet Model Inference Time: {unet_inference_time:.4f} seconds")
+print(f"\nUNet Model Average Memory Usage: {unet_memory_usage / (1024 ** 2):.2f} MB")
+print(f"UNet Model Average Inference Time: {unet_inference_time:.4f} seconds")
 
-print(f"\nDiffusion Model Memory Usage: {diffusion_memory_usage / (1024 ** 2):.2f} MB")
-print(f"Diffusion Model Inference Time: {diffusion_inference_time:.4f} seconds")
+print(f"\nDiffusion Model Average Memory Usage: {diffusion_memory_usage / (1024 ** 2):.2f} MB")
+print(f"Diffusion Model Average Inference Time: {diffusion_inference_time:.4f} seconds")
