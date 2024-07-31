@@ -373,7 +373,7 @@ if __name__ == "__main__":
         train_loader, val_loader = load_data(image_folder, batch_size=8, augment=False, dataset_percentage=0.1, validation_split=0.1, use_rgb=True, num_workers=8)
         
         # Load checkpoint if exists
-        checkpoint_path = os.path.join("checkpoints", "diffusion_RDUnet_model_checkpointed_epoch_89.pth")
+        checkpoint_path = os.path.join("checkpoints", "diffusion_RDUnet_model_checkpointed_epoch_899.pth")
         start_epoch = load_checkpoint(model_checkpointed, optimizer, scheduler, checkpoint_path)
         
         train_model_checkpointed(model_checkpointed, train_loader, val_loader, optimizer, scheduler, writer, num_epochs=300, start_epoch=start_epoch)
