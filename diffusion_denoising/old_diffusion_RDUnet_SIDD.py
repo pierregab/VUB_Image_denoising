@@ -369,7 +369,7 @@ if __name__ == "__main__":
         writer = SummaryWriter(log_dir=log_dir)
         start_tensorboard(log_dir)
         
-        image_folder = 'dataset/DIV2K_train_HR.nosync'
+        image_folder = 'dataset/SIDD_dataset.nosync/SIDD_Medium_Srgb'
         train_loader, val_loader = load_data(image_folder, batch_size=8, augment=False, dataset_percentage=0.1, validation_split=0.1, use_rgb=True, num_workers=8)
         
         # Load checkpoint if exists
