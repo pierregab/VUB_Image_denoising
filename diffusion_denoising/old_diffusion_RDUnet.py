@@ -369,11 +369,16 @@ if __name__ == "__main__":
         writer = SummaryWriter(log_dir=log_dir)
         start_tensorboard(log_dir)
         
-        image_folder = 'dataset/DIV2K_train_HR.nosync'
-        train_loader, val_loader = load_data(image_folder, batch_size=8, augment=False, dataset_percentage=0.1, validation_split=0.1, use_rgb=True, num_workers=8)
+        image_folder = 'dataset/astro_dataset.nosync'
+        train_loader, val_loader = load_data(image_folder, batch_size=8, augment=False, dataset_percentage=1, validation_split=0.1, use_rgb=True, num_workers=8)
         
+        # Debug the data 
+        for batch_idx, (noisy_images, clean_images) in enumerate(train_loader):
+            print(noisy_images.shape, clean_images.shape)
+            break
+
         # Load checkpoint if exists
-        checkpoint_path = os.path.join("checkpoints", "diffusion_RDUnet_model_checkpointed_epoch_89.pth")
+        checkpoint_path = os.path.join("checkpoints", "diffusion_RDUnet_model_checkpointed_epoch_899.pth")
         start_epoch = load_checkpoint(model_checkpointed, optimizer, scheduler, checkpoint_path)
         
         train_model_checkpointed(model_checkpointed, train_loader, val_loader, optimizer, scheduler, writer, num_epochs=300, start_epoch=start_epoch)

@@ -70,6 +70,9 @@ class CustomDataset(Dataset):
 
         image_path, top, left, patch_width, patch_height = self.patch_pairs[patch_idx]
         image = Image.open(image_path)
+
+        if image.mode == 'RGBA':
+            image = image.convert('RGB')
         
         if not self.use_rgb:
             image = image.convert('L')  # Convert to grayscale if not using RGB
