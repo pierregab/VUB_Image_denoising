@@ -200,10 +200,10 @@ def save_frequency_domain_analysis(metrics, last_epoch, save_dir, high_freq_thre
     ax.set_yscale('log')
 
     # Add textbox with parameters
-    textstr = rf'High Freq. Threshold: {high_freq_threshold}\\ Epoch: {last_epoch}'
-    props = dict(boxstyle='round,pad=0.5', facecolor='white', edgecolor='gray', alpha=0.8)
-    ax.text(0.05, 0.95, textstr, transform=ax.transAxes, fontsize=11,
-            verticalalignment='top', bbox=props)
+    #textstr = rf'High Freq. Threshold: {high_freq_threshold}\\ Epoch: {last_epoch}'
+    #props = dict(boxstyle='round,pad=0.5', facecolor='white', edgecolor='gray', alpha=0.8)
+    #ax.text(0.05, 0.95, textstr, transform=ax.transAxes, fontsize=11,
+    #        verticalalignment='top', bbox=props)
 
     plt.savefig(os.path.join(save_dir, 'high_frequency_domain_analysis.png'), dpi=300, bbox_inches='tight')
     plt.close()
@@ -335,10 +335,10 @@ def plot_psd_comparison(metrics, last_epoch, save_dir, high_freq_threshold=0.5):
         ax.tick_params(axis='both', which='major', labelsize=12)
         
         # Add textbox with parameters
-        textstr = rf'High Freq. Threshold: {high_freq_threshold}\\ Epoch: {last_epoch}\\ Noise Level ($\sigma$): {nl:.2f}'
-        props = dict(boxstyle='round,pad=0.5', facecolor='white', edgecolor='gray', alpha=0.8)
-        ax.text(0.95, 0.95, textstr, transform=ax.transAxes, fontsize=11,
-                verticalalignment='top', horizontalalignment='right', bbox=props)
+        # textstr = rf'High Freq. Threshold: {high_freq_threshold}\\ Epoch: {last_epoch}\\ Noise Level ($\sigma$): {nl:.2f}'
+        # props = dict(boxstyle='round,pad=0.5', facecolor='white', edgecolor='gray', alpha=0.8)
+        # ax.text(0.95, 0.95, textstr, transform=ax.transAxes, fontsize=11,
+        #        verticalalignment='top', horizontalalignment='right', bbox=props)
 
         plt.savefig(os.path.join(save_dir, f'psd_comparison_noise_level_{nl:.2f}.png'), dpi=300, bbox_inches='tight')
         plt.close()

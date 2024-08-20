@@ -102,6 +102,8 @@ def evaluate_model_and_plot(epochs, diffusion_model_paths, unet_model_path, val_
     for epoch, diffusion_model_path in zip(epochs, diffusion_model_paths):
         diffusion_model = DiffusionModel(RDUNet_T(base_filters=32).to(device)).to(device)
         diffusion_checkpoint = torch.load(diffusion_model_path, map_location=device)
+        diffusion_model.timesteps = 10
+        print(diffusion_model.timesteps)
         if isinstance(diffusion_checkpoint, dict) and 'model_state_dict' in diffusion_checkpoint:
             diffusion_model.load_state_dict(diffusion_checkpoint['model_state_dict'])
         else:
@@ -313,9 +315,9 @@ if __name__ == "__main__":
     train_noise_levels = [10, 20, 30, 40, 50]
     val_noise_levels = [10, 20, 30, 40, 50]
 
-    train_loader, val_loader = load_data(image_folder, batch_size=1, num_workers=8, validation_split=0.5, augment=False, dataset_percentage=0.01, only_validation=False, include_noise_level=True, train_noise_levels=train_noise_levels, val_noise_levels=val_noise_levels, use_rgb=True)
+    train_loader, val_loader = load_data(image_folder, batch_size=1, num_workers=8, validation_split=0.5, augment=False, dataset_percentage=0.1, only_validation=False, include_noise_level=True, train_noise_levels=train_noise_levels, val_noise_levels=val_noise_levels, use_rgb=True)
 
-    epochs_to_evaluate = [202]
+    epochs_to_evaluate = [300]
     diffusion_model_paths = [f"checkpoints/diffusion_RDUnet_model_checkpointed_epoch_{epoch}.pth" for epoch in epochs_to_evaluate]
     unet_model_path = "checkpoints/rdunet_denoising.pth"
 
