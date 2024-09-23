@@ -1,0 +1,179 @@
+import os
+import sys
+import numpy as np
+import torch
+import cv2
+from torch.utils.data import DataLoader, Dataset
+from torchvision import transforms
+from tqdm import tqdm
+import matplotlib.pyplot as plt
+
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+sys.path.append(project_root)
+
+from UNet.RDUNet_model import RDUNet
+from diffusion_denoising.diffusion_RDUnet import DiffusionModel, RDUNet_T
+from dataset_creation.custom_dataset import CustomDataset  # Ensure this is correctly set up
+
+device = torch.device("cuda" if torch.cuda.is_available() else "mps")
+
+# Define the patch size and overlap
+patch_size = 256
+overlap = 32  # Adjust overlap as needed
+
+def load_and_preprocess_image(image_path, use_rgb=True):
+    """
+    Load and preprocess an image using similar transformations as the dataset.
+
+    Parameters:
+    - image_path (str): Path to the image file.
+    - use_rgb (bool): Whether to load the image in RGB format.
+
+    Returns:
+    - image (torch.Tensor): Preprocessed image tensor.
+    """
+    # Define basic transform
+    if use_rgb:
+        normalize_mean, normalize_std = [0.5, 0.5, 0.5], [0.5, 0.5, 0.5]  # RGB normalization
+    else:
+        normalize_mean, normalize_std = [0.5], [0.5]  # Grayscale normalization
+
+    transform = transforms.Compose([
+        transforms.ToTensor(),
+        transforms.Normalize(mean=normalize_mean, std=normalize_std)
+    ])
+
+    # Load image with OpenCV
+    image = cv2.imread(image_path)
+    if use_rgb:
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)  # Convert to RGB if necessary
+    else:
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)  # Convert to Grayscale if necessary
+
+    # Apply transformation
+    image = transform(image)
+    return image
+
+class ImageDataset(Dataset):
+    def __init__(self, image, patch_size, overlap):
+        self.image = image
+        self.patch_size = patch_size
+        self.overlap = overlap
+        self.patches, self.positions = self.extract_patches()
+
+    def extract_patches(self):
+        h, w = self.image.shape[1:3]
+        patches = []
+        positions = []
+
+        for y in range(0, h - self.patch_size + 1, self.patch_size - self.overlap):
+            for x in range(0, w - self.patch_size + 1, self.patch_size - self.overlap):
+                patch = self.image[:, y:y+self.patch_size, x:x+self.patch_size]
+                patches.append(patch)
+                positions.append((y, x))
+
+        return patches, positions
+
+    def __len__(self):
+        return len(self.patches)
+
+    def __getitem__(self, idx):
+        patch = self.patches[idx]
+        return patch, self.positions[idx]
+
+def denoise_image_in_patches(diffusion_model, noisy_image, patch_size, overlap, sigma):
+    # Prepare the dataset and dataloader
+    dataset = ImageDataset(noisy_image, patch_size, overlap)
+    dataloader = DataLoader(dataset, batch_size=1, shuffle=False)
+
+    denoised_image = torch.zeros_like(noisy_image)
+    weight_map = torch.zeros_like(noisy_image[0], dtype=torch.float32)
+
+    for patch, (y, x) in tqdm(dataloader, desc="Denoising Patches"):
+        patch = patch.to(device)
+
+        with torch.no_grad():
+            # Use the diffusion model to denoise the patch
+            predicted_diffusions = diffusion_model.improved_sampling(patch)
+        
+        predicted_diffusions = predicted_diffusions.cpu().squeeze(0)
+
+        denoised_image[:, y:y+patch_size, x:x+patch_size] += predicted_diffusions
+        weight_map[y:y+patch_size, x:x+patch_size] += 1
+
+    # Avoid division by zero
+    weight_map[weight_map == 0] = 1
+
+    denoised_image = denoised_image / weight_map.unsqueeze(0)
+    return denoised_image
+
+def denormalize(tensor, use_rgb=True):
+    if use_rgb:
+        mean = torch.tensor([0.5, 0.5, 0.5], device=tensor.device).view(3, 1, 1)
+        std = torch.tensor([0.5, 0.5, 0.5], device=tensor.device).view(3, 1, 1)
+    else:
+        mean = torch.tensor([0.5], device=tensor.device).view(1, 1, 1)
+        std = torch.tensor([0.5], device=tensor.device).view(1, 1, 1)
+    
+    return tensor * std + mean
+
+def save_comparison_image(noisy_image, denoised_image, save_path, use_rgb=True):
+    plt.figure(figsize=(10, 10))
+    
+    # Denormalize tensors for display
+    noisy_image_np = denormalize(noisy_image, use_rgb=use_rgb).permute(1, 2, 0).cpu().numpy().clip(0, 1)
+    denoised_image_np = denormalize(denoised_image, use_rgb=use_rgb).permute(1, 2, 0).cpu().numpy().clip(0, 1)
+
+    # Display the noisy image
+    plt.subplot(2, 1, 1)
+    plt.imshow(noisy_image_np)
+    plt.title('Noisy Image')
+    plt.axis('off')
+
+    # Display the denoised image
+    plt.subplot(2, 1, 2)
+    plt.imshow(denoised_image_np)
+    plt.title('Denoised Image')
+    plt.axis('off')
+
+    # Save the figure
+    plt.savefig(save_path, bbox_inches='tight')
+    plt.close()
+
+if __name__ == "__main__":
+    # Load the pre-trained diffusion model
+    diffusion_model_path = 'checkpoints/diffusion_astro_RDUnet_model_checkpointed_epoch_300.pth'
+    diffusion_model = DiffusionModel(RDUNet_T(base_filters=32).to(device)).to(device)
+    diffusion_checkpoint = torch.load(diffusion_model_path, map_location=device)
+    diffusion_model.timesteps = 20  # Set the number of timesteps
+    print(f"Timesteps set to: {diffusion_model.timesteps}")
+    if isinstance(diffusion_checkpoint, dict) and 'model_state_dict' in diffusion_checkpoint:
+        diffusion_model.load_state_dict(diffusion_checkpoint['model_state_dict'])
+    else:
+        diffusion_model = diffusion_checkpoint
+    diffusion_model.to(device)
+    diffusion_model.eval()
+
+    # Load and preprocess the image
+    image_path = 'evaluate_Unet_diffusion/test_image.png'
+    noisy_image = load_and_preprocess_image(image_path, use_rgb=True)
+
+    # Add noise to the image (note: the image is already normalized [-0.5, 0.5])
+    sigma = 40 / 255.0  # Example sigma value for noise
+    noisy_image += sigma * torch.randn_like(noisy_image)
+    noisy_image = noisy_image.clip(-0.5, 0.5)
+
+    # Denoise the image
+    denoised_image = denoise_image_in_patches(diffusion_model, noisy_image, patch_size, overlap, sigma)
+
+    # Denormalize and save the denoised image
+    denoised_image_denorm = denormalize(denoised_image, use_rgb=True)
+    denoised_image_bgr = (denoised_image_denorm * 255.0).permute(1, 2, 0).cpu().numpy().astype(np.uint8)
+    denoised_image_bgr = cv2.cvtColor(denoised_image_bgr, cv2.COLOR_RGB2BGR)
+    cv2.imwrite('denoised_image.jpg', denoised_image_bgr)
+
+    # Save the comparison image with noisy and denoised images
+    save_comparison_image(noisy_image, denoised_image, 'comparison_image.png', use_rgb=True)
+
+    print("Denoised image saved as 'denoised_image.jpg'")
+    print("Comparison image saved as 'comparison_image.png'")

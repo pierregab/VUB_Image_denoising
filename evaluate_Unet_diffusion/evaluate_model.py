@@ -102,7 +102,7 @@ def evaluate_model_and_plot(epochs, diffusion_model_paths, unet_model_path, val_
     for epoch, diffusion_model_path in zip(epochs, diffusion_model_paths):
         diffusion_model = DiffusionModel(RDUNet_T(base_filters=32).to(device)).to(device)
         diffusion_checkpoint = torch.load(diffusion_model_path, map_location=device)
-        diffusion_model.timesteps = 10
+        diffusion_model.timesteps = 20
         print(diffusion_model.timesteps)
         if isinstance(diffusion_checkpoint, dict) and 'model_state_dict' in diffusion_checkpoint:
             diffusion_model.load_state_dict(diffusion_checkpoint['model_state_dict'])
