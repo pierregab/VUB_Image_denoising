@@ -1,6 +1,6 @@
 import torch
 from torchinfo import summary
-from old_diffusion_RDUnet import RDUNet_T, DiffusionModel
+from VUB_Image_denoising.diffusion_denoising.main_diffusion_RDUnet import RDUNet_T, DiffusionModel
 import sys
 import os
 import time

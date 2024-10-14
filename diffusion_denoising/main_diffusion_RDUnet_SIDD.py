@@ -12,7 +12,7 @@ import torch.utils.checkpoint as cp
 from torch.optim.lr_scheduler import CosineAnnealingLR
 import pytorch_msssim
 
-# Assuming your script is in RCA_GAN and the project root is one level up
+# The project root is one level up
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 sys.path.append(project_root)
 
